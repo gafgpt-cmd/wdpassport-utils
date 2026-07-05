@@ -1,87 +1,148 @@
+# WD My Passport Utility for Linux
 
-# WD My Passport Drive Hardware Encryption Utility for Linux
+A Linux CLI and GTK GUI for managing Western Digital My Passport hardware
+encryption and power behavior.
 
-A Linux command-line utility to lock, unlock, and manage the hardware encryption functionality of Western Digital My Passport external drives. Written in Python 3.
+WD My Passport drives support hardware encryption. New drives arrive in a
+passwordless state. After a password is set, drives become locked when unplugged
+and must be unlocked before Linux can mount the real data volume.
 
-WD My Passport drives support hardware encryption. New drives arrive in a passwordless state --- they can be used without locking or unlocking. After a password is set, drives become locked when they are unplugged and must be unlocked when they are plugged in to mount the volume and see its content.
+This utility can:
 
-This utlity can:
+* show drive status, cipher, supported ciphers, and password hint;
+* unlock an encrypted drive;
+* set, change, and remove the drive password;
+* disable or set the drive sleep timer;
+* keep the drive awake during long copies or other intensive work;
+* toggle WD virtual CD and LED state where the model supports it;
+* run a basic self-test;
+* reset the drive encryption key in case of a lost password.
 
-* Show drive status.
-* Set and change the drive's password.
-* Unlock an encrypted drive, given the password.
-* Reset the drive in case of a lost password.
+This tool was originally written by
+[0-duke](https://github.com/0-duke/wdpassport-utils) in 2015 based on reverse
+engineering research by [DanLukes](https://github.com/DanLukes) and an
+implementation by DanLukes and [KenMacD](https://github.com/KenMacD/wdpassport-utils).
+[crypto-universe](https://github.com/crypto-universe/wdpassport-utils) converted
+the project and `py_sg` interface to Python 3. This version keeps the Python
+Linux base and ports Linux-relevant features from
+`maboroshinokiseki/My-My-Passport-Utility`.
 
-Passwords given on the command line are converted into binary password data in a mechanism intended to be compatible with WD's unlock software that is used in Microsoft Windows.
+## Installing on MX Linux or Debian
 
-This tool was originally written by [0-duke](https://github.com/0-duke/wdpassport-utils) in 2015 based on reverse engineering research by [DanLukes](https://github.com/DanLukes) and an implementation by DanLukes and [KenMacD](https://github.com/KenMacD/wdpassport-utils). [crypto-universe](https://github.com/crypto-universe/wdpassport-utils) converted this project and the underlying SCSI interface library py_sg to Python 3. [JoshData](https://github.com/JoshData/wdpassport-utils) updated the library to work with the latest WD My Passport device.
+This project installs into a user-owned virtual environment instead of using
+`sudo pip`. The program still needs root privileges, polkit, or equivalent
+permissions when it opens the physical drive.
 
-## Installing
+From this repository, run:
 
-You'll need the Python 3 development headers to install this tool. On Ubuntu 22.04 LTS run:
-
-```
-sudo apt install python3 python3-dev python3-pip git
-```
-
-Install py3_sg via pip
-```
-sudo python3 -m pip install py3_sg
-```
-
-On other Linux distributions you may need a different command.
-
-You *must* use sudo in this command.  Usually that's a bad idea when running pip but we need to be root to access the devices.
-Then use pip to install the source code in this repository:
-```
-sudo pip install git+https://github.com/0-duke/wdpassport-utils
-```
-
-## Usage
-
-Run script as root or as a user that has permission to manage the device.
-
-When used without any arguments, the status of the drive is shown:
-```
-$ sudo wdpassport-utils.py 
-[sudo] password for user: 
-Device: /dev/sdc
-Security status: Unlocked
-Encryption type: Unknown (0x31)
+```bash
+./install-mx-debian.sh
 ```
 
-There are few options:
+The installer:
 
-```
--u, --unlock          Unlock
-```
-Unlock a locked drive. You will be asked to enter the unlock password. If everything is fine device will be unlocked. (To lock a drive, unplug it.)
+* installs Debian package prerequisites with `apt-get`;
+* creates or updates `$HOME/.local/share/wdpassport-utils-venv`;
+* installs this checkout and its Python dependencies into that venv;
+* links `$HOME/.local/bin/wdpassport` and `$HOME/.local/bin/wdpassport-gui`;
+* installs a desktop launcher under `$HOME/.local/share/applications`.
 
-```
--m, --mount           Enable mount point for an unlocked device
-```
-After unlock, your operating system may still think that your device is a strange thing attached to its USB port and doesn't know how to manage it. This option forces the operating system to rescan the device and handle it as a normal external USB harddrive. This flag can be combined with `-u`.
+If `$HOME/.local/bin` is not in your `PATH`, add it in your shell profile:
 
+```bash
+export PATH="$HOME/.local/bin:$PATH"
 ```
--c, --change_passwd   Set, change, or remove password protection
-```
-Set a password on a new drive, change the password, or remove the password (so that it does not need to be unlocked to use). To remove a password, leave the new password empty.
 
-```
--e, --erase           Erase/reset device
-```
-Erase (reset) the drive. This will remove the internal key associated to you password and all your data will be unaccessible. You will also lose your partition table and you will need to create a new one (you can use fdisk and mkfs or other utilities to prepare and format the drive).
+Manual prerequisite install:
 
+```bash
+sudo apt-get install python3 python3-dev python3-venv python3-pip python3-gi gir1.2-gtk-4.0 gir1.2-adw-1 git build-essential libudev-dev
+python3 -m venv "$HOME/.local/share/wdpassport-utils-venv"
+"$HOME/.local/share/wdpassport-utils-venv/bin/python" -m pip install --upgrade pip setuptools wheel
+"$HOME/.local/share/wdpassport-utils-venv/bin/python" -m pip install .
+ln -sfn "$HOME/.local/share/wdpassport-utils-venv/bin/wdpassport" "$HOME/.local/bin/wdpassport"
+ln -sfn "$HOME/.local/share/wdpassport-utils-venv/bin/wdpassport-gui" "$HOME/.local/bin/wdpassport-gui"
 ```
--d DEVICE, --device DEVICE  Device path (ex. /dev/sdb). Optional.
-```
-This tool will try to auto-detect the device path of your WD My Passport device. If you have more than one device, or if auto-detection fails, you can manually specify the device path, e.g. as `/dev/sdb`.
 
-```
--h, --help            show this help message and exit
-```
-Lists all possible arguments.
+## CLI Usage
 
-<h1>Disclaimer</h1>
+Run the CLI as root, or as a user that has permission to manage the raw block
+device. Use the disk path, such as `/dev/sdb`, not a partition path.
 
-Use the tool and any of the information contained in this repository at your own risk. The tool was developed without any official documenation from Western Digital on how to manage the drive using its raw SCSI interface. We accept no responsibility.
+Show status:
+
+```bash
+sudo wdpassport status --device /dev/sdX
+```
+
+Unlock:
+
+```bash
+sudo wdpassport unlock --device /dev/sdX
+```
+
+Password operations:
+
+```bash
+sudo wdpassport password set --device /dev/sdX
+sudo wdpassport password change --device /dev/sdX
+sudo wdpassport password remove --device /dev/sdX
+```
+
+Drive sleep and long-copy protection:
+
+```bash
+sudo wdpassport sleep status --device /dev/sdX
+sudo wdpassport sleep off --device /dev/sdX
+sudo wdpassport sleep set 3600 --device /dev/sdX
+sudo wdpassport keep-awake --device /dev/sdX --interval 60
+```
+
+`sleep off` asks the drive firmware not to enter standby. `keep-awake` is an
+active guard that periodically reads status so the drive does not go idle while
+you are copying data for hours.
+
+Device controls:
+
+```bash
+sudo wdpassport vcd status --device /dev/sdX
+sudo wdpassport vcd off --device /dev/sdX
+sudo wdpassport led status --device /dev/sdX
+sudo wdpassport led off --device /dev/sdX
+sudo wdpassport led on --device /dev/sdX
+sudo wdpassport self-test --device /dev/sdX
+```
+
+Advanced password blob operations:
+
+```bash
+sudo wdpassport blob generate --output ./unlock.blob
+sudo wdpassport blob unlock ./unlock.blob --device /dev/sdX
+```
+
+Password blob files are unlock material. Treat them like passwords.
+
+Secure erase:
+
+```bash
+sudo wdpassport erase --device /dev/sdX
+```
+
+Erase resets the drive encryption key. Existing data becomes unrecoverable and
+you will need to create a new partition table and filesystem.
+
+## GUI
+
+```bash
+sudo wdpassport-gui
+```
+
+The GUI provides normal Linux controls: status, unlock, password dialogs, sleep
+off/set, keep-awake, virtual CD, LED, self-test, and secure erase confirmation.
+Advanced salt/iteration options and password blob files are CLI-only.
+
+## Disclaimer
+
+Use this tool and any information in this repository at your own risk. It was
+developed without official Western Digital documentation for the raw SCSI vendor
+interface. No responsibility is accepted for data loss or device damage.
