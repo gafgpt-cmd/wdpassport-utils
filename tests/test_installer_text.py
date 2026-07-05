@@ -14,6 +14,7 @@ class InstallerTextTests(unittest.TestCase):
         self.assertIn("wdpassport", text)
         self.assertIn("wdpassport-gui", text)
         self.assertIn(".local/share/applications", text)
+        self.assertIn("--system-site-packages", text)
 
     def test_desktop_launcher_execs_gui(self):
         text = (ROOT / "wdpassport-gui.desktop.in").read_text()

@@ -57,7 +57,7 @@ Manual prerequisite install:
 
 ```bash
 sudo apt-get install python3 python3-dev python3-venv python3-pip python3-gi gir1.2-gtk-4.0 gir1.2-adw-1 git build-essential libudev-dev
-python3 -m venv "$HOME/.local/share/wdpassport-utils-venv"
+python3 -m venv --system-site-packages "$HOME/.local/share/wdpassport-utils-venv"
 "$HOME/.local/share/wdpassport-utils-venv/bin/python" -m pip install --upgrade pip setuptools wheel
 "$HOME/.local/share/wdpassport-utils-venv/bin/python" -m pip install .
 ln -sfn "$HOME/.local/share/wdpassport-utils-venv/bin/wdpassport" "$HOME/.local/bin/wdpassport"

@@ -25,7 +25,7 @@ else
   echo "apt-get was not found. Install Python 3, venv, development headers, PyGObject, GTK4, libadwaita, git, build tools, and libudev headers manually." >&2
 fi
 
-python3 -m venv "$VENV_DIR"
+python3 -m venv --system-site-packages "$VENV_DIR"
 "$VENV_DIR/bin/python" -m pip install --upgrade pip setuptools wheel
 "$VENV_DIR/bin/python" -m pip install --upgrade "$SCRIPT_DIR"
 
