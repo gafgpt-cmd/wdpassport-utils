@@ -16,6 +16,10 @@ SG_DXFER_FROM_DEV = -3
 _SENSE_LEN = 32
 _DEFAULT_TIMEOUT_MS = 20000
 
+# SCSI status byte values
+GOOD = 0x00
+CHECK_CONDITION = 0x02
+
 
 class SgioError(OSError):
     """Raised when an SG_IO command fails at the SCSI/transport layer."""
@@ -72,14 +76,37 @@ def _run(fileobj, cdb: bytes, direction: int, dxferp, dxfer_len: int,
 
     fcntl.ioctl(_fileno(fileobj), SG_IO, hdr)
 
-    if hdr.status != 0 or hdr.host_status != 0 or (hdr.driver_status & 0x0F) != 0:
-        sk = sense.raw[2] & 0x0F if hdr.sb_len_wr > 2 else 0
+    # Interpret the result. A CHECK CONDITION (status 0x02) is NOT automatically
+    # a failure: sense key NO SENSE (0x0) or RECOVERED ERROR (0x1) means the
+    # command completed successfully. The driver's DRIVER_SENSE bit (0x08) just
+    # signals that sense data is present, so it must not be treated as an error
+    # on its own. Only a transport error, a fatal sense key, or a non-GOOD /
+    # non-CHECK-CONDITION status is a real failure.
+    sk = sense.raw[2] & 0x0F if hdr.sb_len_wr > 2 else 0
+    check_condition = hdr.status == CHECK_CONDITION
+    fatal = (
+        hdr.host_status != 0
+        or (check_condition and sk not in (0x00, 0x01))
+        or (not check_condition and hdr.status != GOOD)
+    )
+    if fatal:
+        meaning = _SENSE_KEY_MEANING.get(sk, f"sense key {sk:#x}")
         raise SgioError(
-            f"SCSI command failed: status={hdr.status:#x} "
-            f"host_status={hdr.host_status:#x} driver_status={hdr.driver_status:#x} "
-            f"sense_key={sk:#x}"
+            f"{meaning} (status={hdr.status:#x}, "
+            f"host_status={hdr.host_status:#x}, sense_key={sk:#x})"
         )
     return hdr
+
+
+_SENSE_KEY_MEANING = {
+    0x2: "drive not ready",
+    0x3: "medium error",
+    0x4: "hardware error",
+    0x5: "not supported by this drive model",
+    0x6: "unit attention (drive state changed — retry)",
+    0x7: "data protected / drive is locked",
+    0xB: "command aborted",
+}
 
 
 def read(fileobj, cdb: bytes, size: int) -> bytes:
