@@ -55,25 +55,128 @@ def status(device: str = _device_option()):
     _print_summary(status_summary(open_device(device), device))
 
 
-@app.command()
-def unlock(device: str = _device_option()):
-    """Unlock the drive using a prompted password."""
-    import getpass
+@app.command("list")
+def list_drives_cmd():
+    """List connected WD My Passport drives with identifying details."""
+    from .devices import list_drives
 
-    password = getpass.getpass(f"[wdpassport] password for {device}: ")
+    drives = list_drives()
+    if not drives:
+        typer.echo("No WD My Passport drive found.")
+        raise typer.Exit(1)
+    for d in drives:
+        typer.echo(d.label())
+        typer.echo(f"    node={d.node}  serial={d.serial}  mount={d.mountpoint or '-'}")
+
+
+def _activity_blink(device: str, count: int, interval: float) -> None:
+    """Generate read bursts so the drive's activity LED flickers.
+
+    Works on models with no software-controllable LED. Read-only and safe on a
+    mounted drive.
+    """
+    import os
+    import time
+
+    fd = os.open(device, os.O_RDONLY)
+    try:
+        try:
+            total = os.lseek(fd, 0, os.SEEK_END)
+        except OSError:
+            total = 0
+        chunk = 8 * 1024 * 1024
+        span = max(total - chunk, 1)
+        for i in range(count):
+            os.lseek(fd, (i * 64 * 1024 * 1024) % span, os.SEEK_SET)
+            os.read(fd, chunk)
+            time.sleep(interval)
+    finally:
+        os.close(fd)
+
+
+@app.command()
+def identify(
+    device: str = _device_option(),
+    count: int = typer.Option(6, "--count", min=1, help="Number of blink cycles."),
+    interval: float = typer.Option(0.4, "--interval", min=0.05, help="Seconds per half-cycle."),
+):
+    """Find the physical drive: blink its LED, or flicker its activity LED.
+
+    Tries the WD LED-brightness command first; on models that don't support it
+    (ILLEGAL REQUEST), falls back to read-activity so the activity LED blinks.
+    """
+    import time
+
+    drive = open_device(device)
+    original = None
+    try:
+        original = drive.led_brightness()
+        for _ in range(count):
+            drive.set_led_brightness(0)
+            time.sleep(interval)
+            drive.set_led_brightness(255)
+            time.sleep(interval)
+        if original is not None:
+            drive.set_led_brightness(original)
+        typer.echo("Identify: LED blink complete.")
+        return
+    except Exception:
+        # LED not controllable on this model; fall back to activity flicker.
+        if original is not None:
+            try:
+                drive.set_led_brightness(original)
+            except Exception:
+                pass
+
+    _activity_blink(device, count, interval)
+    typer.echo("Identify: no controllable LED on this model; used disk-activity flicker.")
+
+
+@app.command()
+def unlock(
+    device: str = _device_option(),
+    password_stdin: bool = typer.Option(
+        False,
+        "--password-stdin",
+        help="Read the password from the first line of standard input instead of prompting. For GUI/pkexec use.",
+    ),
+):
+    """Unlock the drive using a prompted password."""
+    if password_stdin:
+        password = sys.stdin.readline().rstrip("\n")
+        if not password:
+            raise typer.BadParameter("No password received on standard input.")
+    else:
+        import getpass
+
+        password = getpass.getpass(f"[wdpassport] password for {device}: ")
     open_device(device).unlock(password)
     typer.echo("Device unlocked.")
 
 
-@password_app.command("set")
-def password_set(device: str = _device_option(), hint: str = typer.Option("", "--hint")):
-    """Set a password on a currently unlocked or unprotected drive."""
-    import getpass
+def _read_stdin_lines(n: int) -> list:
+    lines = [sys.stdin.readline().rstrip("\n") for _ in range(n)]
+    if any(v == "" for v in lines):
+        raise typer.BadParameter("Missing value(s) on standard input.")
+    return lines
 
-    password = getpass.getpass("New password: ")
-    confirm = getpass.getpass("New password (again): ")
-    if password != confirm:
-        raise typer.BadParameter("Password confirmation did not match.")
+
+@password_app.command("set")
+def password_set(
+    device: str = _device_option(),
+    hint: str = typer.Option("", "--hint"),
+    stdin: bool = typer.Option(False, "--stdin", help="Read the new password from stdin (GUI/pkexec)."),
+):
+    """Set a password on a currently unlocked or unprotected drive."""
+    if stdin:
+        password = _read_stdin_lines(1)[0]
+    else:
+        import getpass
+
+        password = getpass.getpass("New password: ")
+        confirm = getpass.getpass("New password (again): ")
+        if password != confirm:
+            raise typer.BadParameter("Password confirmation did not match.")
     drive = open_device(device)
     status_value = drive.encryption_status()
     block = drive.read_security_block()
@@ -83,15 +186,22 @@ def password_set(device: str = _device_option(), hint: str = typer.Option("", "-
 
 
 @password_app.command("change")
-def password_change(device: str = _device_option(), hint: str = typer.Option("", "--hint")):
+def password_change(
+    device: str = _device_option(),
+    hint: str = typer.Option("", "--hint"),
+    stdin: bool = typer.Option(False, "--stdin", help="Read current then new password from stdin (GUI/pkexec)."),
+):
     """Change the current password."""
-    import getpass
+    if stdin:
+        current, new = _read_stdin_lines(2)
+    else:
+        import getpass
 
-    current = getpass.getpass("Current password: ")
-    new = getpass.getpass("New password: ")
-    confirm = getpass.getpass("New password (again): ")
-    if new != confirm:
-        raise typer.BadParameter("Password confirmation did not match.")
+        current = getpass.getpass("Current password: ")
+        new = getpass.getpass("New password: ")
+        confirm = getpass.getpass("New password (again): ")
+        if new != confirm:
+            raise typer.BadParameter("Password confirmation did not match.")
     drive = open_device(device)
     status_value = drive.encryption_status()
     block = drive.read_security_block()
@@ -102,11 +212,17 @@ def password_change(device: str = _device_option(), hint: str = typer.Option("",
 
 
 @password_app.command("remove")
-def password_remove(device: str = _device_option()):
+def password_remove(
+    device: str = _device_option(),
+    stdin: bool = typer.Option(False, "--stdin", help="Read current password from stdin (GUI/pkexec)."),
+):
     """Remove password protection from an unlocked drive."""
-    import getpass
+    if stdin:
+        current = _read_stdin_lines(1)[0]
+    else:
+        import getpass
 
-    current = getpass.getpass("Current password: ")
+        current = getpass.getpass("Current password: ")
     drive = open_device(device)
     status_value = drive.encryption_status()
     block = drive.read_security_block()
@@ -120,13 +236,15 @@ def erase(
     device: str = _device_option(),
     cipher: Optional[int] = typer.Option(None, "--cipher", help="Advanced cipher id, for example 0x30."),
     i_know_what_i_am_doing: bool = typer.Option(False, "--i-know-what-i-am-doing"),
+    force: bool = typer.Option(False, "--force", help="Skip the typed confirmation (caller already confirmed, e.g. GUI)."),
 ):
     """Reset the data encryption key. This makes existing data unrecoverable."""
     if cipher is not None:
         _require_advanced(i_know_what_i_am_doing)
-    confirmation = typer.prompt(f"Type {device} to erase all data")
-    if confirmation != device:
-        raise typer.Abort()
+    if not force:
+        confirmation = typer.prompt(f"Type {device} to erase all data")
+        if confirmation != device:
+            raise typer.Abort()
     drive = open_device(device)
     status_value = drive.encryption_status()
     drive.reset_data_encryption_key(cipher or status_value.current_cipher, status_value.key_reset_enabler)

@@ -20,14 +20,14 @@ class ScsiDevice:
         self.fileobj = fileobj
 
     def read(self, cdb, size):
-        import py3_sg
+        from . import sgio
 
-        return py3_sg.read_as_bin_str(self.fileobj, pack_cdb(cdb), size)
+        return sgio.read(self.fileobj, pack_cdb(cdb), size)
 
     def write(self, cdb, data):
-        import py3_sg
+        from . import sgio
 
-        py3_sg.write(self.fileobj, pack_cdb(cdb), data)
+        sgio.write(self.fileobj, pack_cdb(cdb), data)
 
     def mode_sense(self, page_code):
         data = self.read([0x5A, 0x00, page_code, 0x00, 0x00, 0x00, 0x00, 0x00, 64, 0x00], 64)

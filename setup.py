@@ -20,6 +20,7 @@ setup(name='wdpassport_utils',
         'console_scripts': [
           'wdpassport=wdpassport.cli:main',
           'wdpassport-gui=wdpassport.gui:main',
+          'wd-tray=wdpassport.tray:main',
         ],
       },
       )
