@@ -321,6 +321,8 @@ def main(argv=None) -> int:
                 add("Status", lambda dd=d: self.on_status(dd))
                 add("Disable standby (sleep off)",
                     lambda dd=d: self.on_sleep_off(dd))
+                add("Change Password…",
+                    lambda dd=d: self.on_change_password(dd))
                 add("Rename…", lambda dd=d: self.on_rename(dd))
 
             self.menu.append(head)
@@ -388,6 +390,34 @@ def main(argv=None) -> int:
                 subprocess.Popen(["wdpassport-gui"])
             except Exception as exc:
                 notify("Cannot open control panel", str(exc), "dialog-error")
+
+        def on_change_password(self, d):
+            try:
+                creds = self._ask_change_password(d)
+                if creds is None:
+                    return
+                current, new = creds
+                if not current or not new:
+                    notify("Change password",
+                           "Both current and new passwords are required.",
+                           "dialog-error")
+                    return
+                try:
+                    proc = subprocess.run(
+                        priv("password", "change", "-d", d.node, "--stdin"),
+                        input="%s\n%s\n" % (current, new), text=True,
+                        capture_output=True, timeout=60)
+                except Exception as exc:
+                    notify("Change password failed", str(exc), "dialog-error")
+                    return
+                if proc.returncode == 0:
+                    notify("Password changed",
+                           "The drive password was updated.", "wdpassport")
+                else:
+                    notify("Change password failed",
+                           _pkexec_message(proc.returncode, proc), "dialog-error")
+            except Exception as exc:
+                notify("Change password error", str(exc), "dialog-error")
 
         def on_mount(self, d):
             try:
@@ -473,6 +503,33 @@ def main(argv=None) -> int:
             pw = entry.get_text() if resp == Gtk.ResponseType.OK else None
             dlg.destroy()
             return pw
+
+        def _ask_change_password(self, d):
+            dlg = Gtk.Dialog(title="Change WD Passport Password", flags=0)
+            dlg.add_buttons(Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,
+                            "Change", Gtk.ResponseType.OK)
+            dlg.set_default_response(Gtk.ResponseType.OK)
+            box = dlg.get_content_area()
+            box.set_spacing(8)
+            box.set_border_width(12)
+            id_label = Gtk.Label(label=d.label(), xalign=0)
+            id_label.set_selectable(True)
+            box.add(id_label)
+            box.add(Gtk.Label(label="Current password:", xalign=0))
+            cur = Gtk.Entry()
+            cur.set_visibility(False)
+            box.add(cur)
+            box.add(Gtk.Label(label="New password:", xalign=0))
+            new = Gtk.Entry()
+            new.set_visibility(False)
+            new.set_activates_default(True)
+            box.add(new)
+            dlg.show_all()
+            resp = dlg.run()
+            result = ((cur.get_text(), new.get_text())
+                      if resp == Gtk.ResponseType.OK else None)
+            dlg.destroy()
+            return result
 
         def _ask_alias(self, d):
             dlg = Gtk.Dialog(title="Rename WD Passport", flags=0)
