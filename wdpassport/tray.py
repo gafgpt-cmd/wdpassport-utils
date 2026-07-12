@@ -17,7 +17,7 @@ import os
 import subprocess
 import time
 
-from .devices import list_drives, set_alias
+from .devices import list_drives, set_alias, virtual_cd_nodes
 
 REFRESH_SECONDS = 5
 
@@ -140,8 +140,18 @@ def do_unmount(partition: str) -> tuple:
     return proc.returncode == 0, (proc.stderr or proc.stdout or "").strip()
 
 
-def do_poweroff(node: str) -> tuple:
-    """WD re-locks on power loss, so power-off is the 'lock' action."""
+def do_poweroff(node: str, serial: str = "") -> tuple:
+    """WD re-locks on power loss, so power-off is the 'lock' action.
+
+    The WD Virtual CD ('WD Unlocker') is a second unit on the same device;
+    udisks blocks power-off while it is mounted, so unmount it first.
+    """
+    for vcd in virtual_cd_nodes(serial):
+        try:
+            subprocess.run(["udisksctl", "unmount", "-b", vcd],
+                           capture_output=True, text=True, timeout=15)
+        except Exception:
+            pass
     try:
         proc = subprocess.run(["udisksctl", "power-off", "-b", node],
                               capture_output=True, text=True, timeout=30)
@@ -342,7 +352,7 @@ def main(argv=None) -> int:
                                "dialog-error")
                         self.rebuild()
                         return
-                ok, msg = do_poweroff(d.node)
+                ok, msg = do_poweroff(d.node, d.serial)
                 if ok:
                     notify("Drive locked",
                            "Powered off; re-plug or Unlock to use.",
