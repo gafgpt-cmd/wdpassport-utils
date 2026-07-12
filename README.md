@@ -27,6 +27,11 @@ the project and `py_sg` interface to Python 3. This version keeps the Python
 Linux base and ports Linux-relevant features from
 `maboroshinokiseki/My-My-Passport-Utility`.
 
+The Linux packaging (Debian `.deb`), the GTK system-tray applet and control
+window, drive identification, and the dependency-free pure-Python SCSI transport
+(`sgio.py`, replacing the compiled `py_sg` extension) in this version were
+developed with [Claude Code](https://claude.com/claude-code) (Anthropic).
+
 ## Installing on MX Linux or Debian
 
 This project installs into a user-owned virtual environment instead of using
