@@ -1,0 +1,42 @@
+# wdpassport-utils — dependency manifest
+# Package: wdpassport-utils  0.3.0   Architecture: all   (pure Python)
+# Targets:  MX Linux, Debian 11/12/13, Ubuntu and derivatives — any Python 3.8+
+#
+# The package is PURE PYTHON. The SCSI layer uses a ctypes SG_IO transport
+# (wdpassport/sgio.py) instead of the old compiled py3_sg C-extension, so there
+# is NO virtualenv and NO Python-version/ABI lock. The module installs to the
+# distro's /usr/lib/python3/dist-packages and runs on whatever python3 the
+# flavor provides. Every dependency below is satisfied by the distro's own apt
+# packages — nothing is vendored, nothing is compiled at install time.
+
+## INTERPRETER
+python3 (>= 3.8)               (apt: python3)                 # any system python3; not version-locked
+
+## PYTHON RUNTIME (apt Depends)
+python3-gi                     # PyGObject — GTK4 window + GTK3 tray bindings
+python3-typer                  # CLI framework (pulls python3-click, python3-typing-extensions, python3-rich)
+
+## PYTHON RUNTIME (apt Recommends, optional)
+python3-pyudev                 # only used by the legacy udev discovery helpers / tests; pure list_drives() needs it not
+
+## TYPELIBS / GObject introspection (apt Depends)
+gir1.2-gtk-3.0                 # GTK3 typelib — tray applet
+gir1.2-gtk-4.0                 # GTK4 typelib — window GUI
+gir1.2-ayatanaappindicator3-0.1  # AppIndicator typelib — tray icon
+
+## SYSTEM TOOLS / SERVICES (apt Depends)
+udisks2                        # udisksctl mount / unmount / power-off (lock)
+util-linux                     # lsblk, findmnt
+policykit-1                    # pkexec + polkit — privileged unlock/identify/password/erase
+libnotify-bin                  # notify-send — tray/GUI notifications
+
+## BUNDLED IN THE PACKAGE (no external Python deps)
+wdpassport/                    # cli, gui (GTK4), tray (GTK3+AppIndicator), protocol, scsi,
+                               # sgio (ctypes SG_IO), devices (rich discovery + aliases),
+                               # passwords, formatting, keepawake, actions
+# stdlib only: ctypes, fcntl, glob, os, subprocess, struct, dataclasses, threading
+
+## NOT required / NOT bundled
+# - py3_sg  (compiled C-ext)  -> REMOVED, replaced by wdpassport/sgio.py
+# - libadwaita (Adw)          -> optional; GUI falls back to plain GTK4 if absent
+# - No venv, pip, network, or build tools at install time.

@@ -2,7 +2,7 @@
 from setuptools import setup
 
 setup(name='wdpassport_utils',
-      version='0.2',
+      version='0.3.0',
       description='WD My Passport Drive Hardware Encryption Utility for Linux',
       long_description=open('README.md', encoding='utf-8').read(),
       long_description_content_type='text/markdown',
@@ -12,7 +12,15 @@ setup(name='wdpassport_utils',
       python_requires='>=3.8',
       install_requires=[
         'pyudev',
+        'typer>=0.12',
         'py3_sg @ git+https://github.com/crypto-universe/py_sg',
       ],
-      scripts=['wdpassport-utils.py'],
+      packages=['wdpassport'],
+      entry_points={
+        'console_scripts': [
+          'wdpassport=wdpassport.cli:main',
+          'wdpassport-gui=wdpassport.gui:main',
+          'wd-tray=wdpassport.tray:main',
+        ],
+      },
       )
