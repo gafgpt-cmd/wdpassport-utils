@@ -163,6 +163,23 @@ def _usb_port(name: str) -> str:
     return port
 
 
+def virtual_cd_nodes(serial: str = "") -> list:
+    """Return the WD Virtual CD device node(s) (e.g. /dev/sr0) for a drive.
+
+    The WD exposes a second logical unit — the 'WD Unlocker' virtual CD. udisks
+    refuses to power-off (lock) the drive while any part of the device, including
+    this VCD, is mounted, so callers must unmount it first.
+    """
+    nodes = []
+    for link in glob.glob(f"{BYID}/usb-WD_Virtual_CD_*"):
+        if "-part" in link or not os.path.exists(link):
+            continue
+        if serial and serial not in os.path.basename(link):
+            continue
+        nodes.append(os.path.realpath(link))
+    return nodes
+
+
 def _mountpoint(part: str) -> str:
     if not part:
         return ""

@@ -44,7 +44,7 @@ def main(argv=None) -> int:
         Adw = None
     from gi.repository import Gdk, Gio, GLib, Gtk
 
-    from .devices import list_drives, set_alias
+    from .devices import list_drives, set_alias, virtual_cd_nodes
 
     CSS = """
     .locked   { color: #e01b24; font-weight: bold; }
@@ -415,12 +415,15 @@ def main(argv=None) -> int:
             drive = self.require_drive()
             if not drive:
                 return
-            node, part, mountpoint = (
-                drive.node, drive.partition, drive.mountpoint)
+            node, part, mountpoint, serial = (
+                drive.node, drive.partition, drive.mountpoint, drive.serial)
 
             def fn():
                 if part and mountpoint:
                     run_cmd(["udisksctl", "unmount", "-b", part])
+                # The WD Virtual CD unit blocks power-off while mounted.
+                for vcd in virtual_cd_nodes(serial):
+                    run_cmd(["udisksctl", "unmount", "-b", vcd])
                 rc, out, err = run_cmd(
                     ["udisksctl", "power-off", "-b", node])
                 if rc == 0:
