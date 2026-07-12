@@ -16,6 +16,7 @@ This utility can:
 * keep the drive awake during long copies or other intensive work;
 * toggle WD virtual CD and LED state where the model supports it;
 * run a basic self-test;
+* report S.M.A.R.T. drive health (temperature, power-on hours, sector counts);
 * reset the drive encryption key in case of a lost password.
 
 This tool was originally written by
@@ -84,10 +85,18 @@ Show status:
 sudo wdpassport status --device /dev/sdX
 ```
 
-Unlock:
+Unlock (add `--mount` / `-m` to rescan and mount the drive right after):
 
 ```bash
-sudo wdpassport unlock --device /dev/sdX
+sudo wdpassport unlock
+sudo wdpassport unlock --mount
+```
+
+Drive health (S.M.A.R.T., needs the `smartmontools` package):
+
+```bash
+sudo wdpassport health          # overall health, temperature, power-on hours, sectors
+sudo wdpassport health --raw    # full smartctl report
 ```
 
 Password operations:

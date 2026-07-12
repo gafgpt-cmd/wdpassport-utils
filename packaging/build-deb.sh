@@ -138,7 +138,7 @@ Section: utils
 Priority: optional
 Architecture: $ARCH
 Depends: python3 (>= 3.8), python3-gi, gir1.2-gtk-3.0, gir1.2-gtk-4.0, gir1.2-ayatanaappindicator3-0.1, python3-typer, udisks2, util-linux, policykit-1, libnotify-bin
-Recommends: python3-pyudev
+Recommends: python3-pyudev, smartmontools
 Installed-Size: $INSTALLED_KB
 Maintainer: wdpassport-utils <wdpassport-utils@users.noreply.github.com>
 Description: WD My Passport hardware-encryption utility (CLI, GTK GUI, tray)

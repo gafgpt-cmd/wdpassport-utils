@@ -163,6 +163,9 @@ def unlock(
         "--password-stdin",
         help="Read the password from the first line of standard input instead of prompting. For GUI/pkexec use.",
     ),
+    mount: bool = typer.Option(
+        False, "--mount", "-m",
+        help="After unlocking, rescan the device and mount the drive."),
 ):
     """Unlock the drive using a prompted password."""
     device = _resolve_device(device)
@@ -176,6 +179,55 @@ def unlock(
         password = getpass.getpass(f"[wdpassport] password for {device}: ")
     open_device(device).unlock(password)
     typer.echo("Device unlocked.")
+    if mount:
+        _rescan_and_mount(device)
+
+
+def _rescan_and_mount(device: str) -> None:
+    """Force the kernel to re-read the just-unlocked device so its real
+    partition appears, then mount it via udisksctl."""
+    import os
+    import subprocess
+    import time
+
+    name = os.path.basename(device)
+    rescan = "/sys/block/%s/device/rescan" % name
+    try:
+        if os.path.exists(rescan):
+            with open(rescan, "w") as fh:
+                fh.write("1\n")
+    except OSError:
+        pass
+    subprocess.run(["udevadm", "settle", "--timeout=5"], capture_output=True)
+
+    part = ""
+    for _ in range(15):
+        for cand in ("%s1" % device, "%sp1" % device):
+            if os.path.exists(cand):
+                part = cand
+                break
+        if part:
+            break
+        subprocess.run(["udevadm", "settle", "--timeout=2"], capture_output=True)
+        time.sleep(1)
+    if not part:
+        typer.echo("Unlocked, but no partition appeared to mount.", err=True)
+        return
+    proc = subprocess.run(["udisksctl", "mount", "-b", part],
+                          capture_output=True, text=True)
+    out = (proc.stdout or proc.stderr or "").strip()
+    if proc.returncode == 0 or "AlreadyMounted" in out:
+        # Report the mount point (query it if udisks said "already mounted").
+        mp = ""
+        try:
+            r = subprocess.run(["findmnt", "-nro", "TARGET", "--source", part],
+                               capture_output=True, text=True)
+            mp = r.stdout.strip().splitlines()[0] if r.stdout.strip() else ""
+        except Exception:
+            pass
+        typer.echo("Mounted at %s." % mp if mp else (out or "Mounted."))
+    else:
+        typer.echo(out or ("Partition ready at %s." % part), err=True)
 
 
 def _read_stdin_lines(n: int) -> list:
@@ -347,6 +399,51 @@ def led_off(device: str = _device_option()):
 def self_test(device: str = _device_option()):
     """Run a minimal device diagnostic."""
     typer.echo(f"Self-test: {open_device(device).self_test()}")
+
+
+@app.command()
+def health(
+    device: str = _device_option(),
+    raw: bool = typer.Option(False, "--raw", help="Show the full smartctl report."),
+):
+    """Report drive S.M.A.R.T. health (via smartctl / smartmontools).
+
+    Reads real drive health — overall status, temperature, power-on hours,
+    reallocated/pending sectors — over the USB SAT bridge. Requires the
+    smartmontools package.
+    """
+    import shutil
+    import subprocess
+
+    device = _resolve_device(device)
+    if not shutil.which("smartctl"):
+        typer.echo(
+            "smartctl not found. Install it with: sudo apt install smartmontools",
+            err=True)
+        raise typer.Exit(1)
+
+    out = ""
+    # USB bridges usually need '-d sat'; fall back to scsi, then auto.
+    for dtype in ("sat", "scsi", "auto"):
+        proc = subprocess.run(
+            ["smartctl", "-H", "-A", "-i", "-d", dtype, device],
+            capture_output=True, text=True)
+        out = proc.stdout
+        if "smart support is:" in out.lower() or "overall-health" in out.lower():
+            break
+    if not out.strip():
+        typer.echo("No SMART data available for this drive.", err=True)
+        raise typer.Exit(1)
+    if raw:
+        typer.echo(out.rstrip())
+        return
+
+    keys = ("Device Model", "Model Family", "Serial Number", "User Capacity",
+            "Rotation Rate", "overall-health", "Temperature", "Power_On_Hours",
+            "Power_Cycle", "Reallocated", "Pending", "Uncorrect", "SMART support is")
+    lines = [ln.strip() for ln in out.splitlines()
+             if any(k.lower() in ln.lower() for k in keys)]
+    typer.echo("\n".join(lines) if lines else out.rstrip())
 
 
 @app.command("keep-awake")
