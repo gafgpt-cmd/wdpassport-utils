@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48">
+  <!-- WD Passport — off / not connected (all grey, muted) -->
+  <rect x="9" y="6" width="30" height="36" rx="5" fill="#9aa3ad"/>
+  <rect x="9" y="6" width="30" height="36" rx="5" fill="none" stroke="#6b7280" stroke-width="1.5"/>
+  <rect x="13" y="10" width="22" height="8" rx="2" fill="#c3c9d0"/>
+  <circle cx="24" cy="31" r="3" fill="#e5e7eb"/>
+  <!-- muted closed padlock -->
+  <g transform="translate(30,19)">
+    <path d="M2 7 v-3 a5 5 0 0 1 10 0 v3" fill="none" stroke="#6b7280" stroke-width="2.4" stroke-linecap="round"/>
+    <rect x="-1" y="7" width="12" height="9" rx="2" fill="#6b7280"/>
+    <circle cx="5" cy="11.5" r="1.6" fill="#374151"/>
+  </g>
+</svg>
