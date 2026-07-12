@@ -83,6 +83,18 @@ def do_identify(node: str) -> tuple:
     return False, _pkexec_message(proc.returncode, proc)
 
 
+def do_priv(node: str, *args) -> tuple:
+    """Run a privileged read/toggle CLI subcommand; return (ok, text)."""
+    try:
+        proc = subprocess.run(priv(*args, "-d", node),
+                              capture_output=True, text=True, timeout=60)
+    except Exception as exc:
+        return False, str(exc)
+    if proc.returncode == 0:
+        return True, (proc.stdout or "done").strip()
+    return False, _pkexec_message(proc.returncode, proc)
+
+
 def _wait_for_part(node: str, timeout: int = 20) -> str:
     """Poll for the partition to appear after an unlock (up to ~timeout s)."""
     for _ in range(timeout):
@@ -236,6 +248,9 @@ def main(argv=None) -> int:
                     self._append_drive(d)
 
             self.menu.append(Gtk.SeparatorMenuItem())
+            panel = Gtk.MenuItem(label="Open Control Panel…")
+            panel.connect("activate", lambda _w: self.on_open_control_panel())
+            self.menu.append(panel)
             refresh = Gtk.MenuItem(label="Refresh")
             refresh.connect("activate", lambda _w: self.rebuild())
             self.menu.append(refresh)
@@ -292,6 +307,7 @@ def main(argv=None) -> int:
             if d.is_locked:
                 add("Unlock + Mount", lambda dd=d: self.on_unlock(dd))
                 add("Identify (blink LED)", lambda dd=d: self.on_identify(dd))
+                add("Status", lambda dd=d: self.on_status(dd))
                 add("Rename…", lambda dd=d: self.on_rename(dd))
             else:
                 if d.mountpoint:
@@ -302,6 +318,9 @@ def main(argv=None) -> int:
                 sub.append(Gtk.SeparatorMenuItem())
                 add("Lock (power off)", lambda dd=d: self.on_lock(dd))
                 add("Identify (blink LED)", lambda dd=d: self.on_identify(dd))
+                add("Status", lambda dd=d: self.on_status(dd))
+                add("Disable standby (sleep off)",
+                    lambda dd=d: self.on_sleep_off(dd))
                 add("Rename…", lambda dd=d: self.on_rename(dd))
 
             self.menu.append(head)
@@ -346,6 +365,29 @@ def main(argv=None) -> int:
                     notify("Identify failed", msg, "dialog-error")
             except Exception as exc:
                 notify("Identify error", str(exc), "dialog-error")
+
+        def on_status(self, d):
+            try:
+                ok, text = do_priv(d.node, "status")
+                notify("WD Passport status" if ok else "Status failed",
+                       text, "wdpassport" if ok else "dialog-error")
+            except Exception as exc:
+                notify("Status error", str(exc), "dialog-error")
+
+        def on_sleep_off(self, d):
+            try:
+                ok, text = do_priv(d.node, "sleep", "off")
+                notify("Standby disabled" if ok else "Sleep-off failed",
+                       text or "The drive will not spin down.",
+                       "wdpassport" if ok else "dialog-error")
+            except Exception as exc:
+                notify("Sleep-off error", str(exc), "dialog-error")
+
+        def on_open_control_panel(self):
+            try:
+                subprocess.Popen(["wdpassport-gui"])
+            except Exception as exc:
+                notify("Cannot open control panel", str(exc), "dialog-error")
 
         def on_mount(self, d):
             try:
