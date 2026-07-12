@@ -144,6 +144,7 @@ def main(argv=None) -> int:
                 ("LED On",          self.act_led_on),
                 ("LED Off",         self.act_led_off),
                 ("Self Test",       self.act_self_test),
+                ("Health",          self.act_health),
                 ("Rename",          self.dlg_rename),
                 ("Secure Erase",    self.dlg_erase),
             ]
@@ -345,6 +346,19 @@ def main(argv=None) -> int:
                 problem = priv_error(rc, out, err)
                 return problem or (out.strip() or "Self-test started.")
             self.run_async(fn, "Running self-test…")
+
+        def act_health(self):
+            drive = self.require_drive()
+            if not drive:
+                return
+            node = drive.node
+
+            def fn():
+                rc, out, err = run_cmd(priv("health", "-d", node))
+                if out.strip():
+                    return out.strip()
+                return priv_error(rc, out, err) or "No SMART data available."
+            self.run_async(fn, "Reading S.M.A.R.T. health…")
 
         # -- unlock (privileged) then mount (user) ------------------------
         def dlg_unlock(self):

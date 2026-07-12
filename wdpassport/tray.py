@@ -308,6 +308,7 @@ def main(argv=None) -> int:
                 add("Unlock + Mount", lambda dd=d: self.on_unlock(dd))
                 add("Identify (blink LED)", lambda dd=d: self.on_identify(dd))
                 add("Status", lambda dd=d: self.on_status(dd))
+                add("Health (S.M.A.R.T.)", lambda dd=d: self.on_health(dd))
                 add("Rename…", lambda dd=d: self.on_rename(dd))
             else:
                 if d.mountpoint:
@@ -319,6 +320,7 @@ def main(argv=None) -> int:
                 add("Lock (power off)", lambda dd=d: self.on_lock(dd))
                 add("Identify (blink LED)", lambda dd=d: self.on_identify(dd))
                 add("Status", lambda dd=d: self.on_status(dd))
+                add("Health (S.M.A.R.T.)", lambda dd=d: self.on_health(dd))
                 add("Disable standby (sleep off)",
                     lambda dd=d: self.on_sleep_off(dd))
                 add("Change Password…",
@@ -375,6 +377,14 @@ def main(argv=None) -> int:
                        text, "wdpassport" if ok else "dialog-error")
             except Exception as exc:
                 notify("Status error", str(exc), "dialog-error")
+
+        def on_health(self, d):
+            try:
+                ok, text = do_priv(d.node, "health")
+                notify("WD Passport health" if ok else "Health check failed",
+                       text, "wdpassport" if ok else "dialog-error")
+            except Exception as exc:
+                notify("Health error", str(exc), "dialog-error")
 
         def on_sleep_off(self, d):
             try:
