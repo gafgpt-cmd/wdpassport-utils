@@ -10,6 +10,7 @@ from wdpassport.protocol import EncryptionStatus
 class FakeDevice:
     def __init__(self):
         self.calls = []
+        self._sleep = 0
 
     def encryption_status(self):
         return EncryptionStatus(
@@ -25,9 +26,10 @@ class FakeDevice:
 
     def set_sleep_timer(self, seconds):
         self.calls.append(("set_sleep_timer", seconds))
+        self._sleep = seconds
 
     def sleep_timer(self):
-        return 0
+        return self._sleep
 
     def self_test(self):
         return "ok"

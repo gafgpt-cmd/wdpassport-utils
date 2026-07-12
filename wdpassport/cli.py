@@ -337,7 +337,20 @@ def sleep_status(device: str = _device_option()):
 @sleep_app.command("set")
 def sleep_set(seconds: int, device: str = _device_option()):
     """Set the standby timer in seconds."""
-    open_device(device).set_sleep_timer(seconds)
+    drive = open_device(device)
+    drive.set_sleep_timer(seconds)
+    # Verify: some WD firmware accepts the SCSI command but ignores a custom
+    # timer, so don't claim success without reading it back.
+    try:
+        actual = drive.sleep_timer()
+    except Exception:
+        actual = None
+    if actual is not None and seconds and abs(actual - seconds) > 60:
+        typer.echo(
+            f"Warning: drive reports {actual}s, not {seconds}s — this firmware "
+            f"ignored the custom timer (only 'sleep off' is reliable here).",
+            err=True)
+        raise typer.Exit(1)
     typer.echo(f"Sleep timer set to {seconds} seconds.")
 
 
@@ -496,7 +509,11 @@ def main(argv=None) -> int:
     import click
 
     try:
-        app(args=argv, prog_name="wdpassport", standalone_mode=False)
+        # With standalone_mode=False, click does NOT re-raise typer.Exit — it
+        # RETURNS the exit code as app()'s return value. Ignoring that return
+        # made every `raise typer.Exit(N)` silently exit 0. Capture it.
+        rv = app(args=argv, prog_name="wdpassport", standalone_mode=False)
+        return rv if isinstance(rv, int) else 0
     except typer.Exit as exc:
         return int(exc.exit_code or 0)
     except click.Abort:
@@ -510,4 +527,3 @@ def main(argv=None) -> int:
         # should print one clean line, not a traceback.
         typer.echo(f"Error: {exc}", err=True)
         return 1
-    return 0

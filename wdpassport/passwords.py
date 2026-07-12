@@ -70,7 +70,15 @@ def password_length_for_cipher(cipher: int) -> int:
         raise ValueError(f"unsupported cipher {cipher:#x}") from exc
 
 
+MAX_ITERATION_COUNT = 1_000_000  # WD uses 1000; guard against a corrupt block
+
+
 def make_password_blob(password: str, cipher: int, salt: bytes, iteration_count: int) -> bytes:
+    # iteration_count comes from the drive's security block. A corrupt/garbage
+    # value (e.g. 2**32-1) would loop for hours; fail fast instead of hanging.
+    if not 0 <= iteration_count <= MAX_ITERATION_COUNT:
+        raise ValueError(
+            f"implausible iteration count {iteration_count} (corrupt security block?)")
     blob = salt + password.encode("utf-16-le")
     for _ in range(iteration_count):
         blob = sha256(blob).digest()
