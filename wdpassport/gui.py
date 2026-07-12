@@ -170,16 +170,22 @@ def main(argv=None) -> int:
 
         # -- infrastructure -----------------------------------------------
         def _install_css(self):
-            provider = Gtk.CssProvider()
+            # CSS is cosmetic (lock-badge colors). GTK4's CssProvider API varies
+            # by version, so pick the right call and never let it block the
+            # window from showing.
             try:
-                provider.load_from_data(CSS)
-            except TypeError:
-                provider.load_from_data(CSS.encode("utf-8"), -1)
-            display = Gdk.Display.get_default()
-            if display is not None:
-                Gtk.StyleContext.add_provider_for_display(
-                    display, provider,
-                    Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+                provider = Gtk.CssProvider()
+                if hasattr(provider, "load_from_string"):
+                    provider.load_from_string(CSS)              # GTK 4.12+
+                else:
+                    provider.load_from_data(CSS.encode("utf-8"))  # older: bytes, 1 arg
+                display = Gdk.Display.get_default()
+                if display is not None:
+                    Gtk.StyleContext.add_provider_for_display(
+                        display, provider,
+                        Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+            except Exception:
+                pass
 
         def set_message(self, message):
             self.status.set_label(message)
@@ -645,4 +651,6 @@ def main(argv=None) -> int:
             def do_activate(self):
                 PassportWindow(self).present()
 
-    return PassportApp().run(argv)
+    # Pass None (not the stripped argv) so GApplication activates and shows the
+    # window; an empty argv list is read as argc=0 and returns without activating.
+    return PassportApp().run(None)
