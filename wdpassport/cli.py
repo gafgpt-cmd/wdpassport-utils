@@ -371,8 +371,21 @@ def blob_unlock(path: Path, device: str = _device_option()):
 
 
 def main(argv=None) -> int:
+    import click
+
     try:
         app(args=argv, prog_name="wdpassport", standalone_mode=False)
     except typer.Exit as exc:
         return int(exc.exit_code or 0)
+    except click.Abort:
+        typer.echo("Aborted.", err=True)
+        return 1
+    except click.ClickException as exc:
+        exc.show()
+        return exc.exit_code
+    except Exception as exc:
+        # Device/SCSI errors (e.g. a command the drive model does not support)
+        # should print one clean line, not a traceback.
+        typer.echo(f"Error: {exc}", err=True)
+        return 1
     return 0
