@@ -25,12 +25,33 @@ app.add_typer(blob_app, name="blob")
 
 
 def open_device(device_path: str) -> WdPassportDevice:
+    device_path = _resolve_device(device_path)
     fileobj = open(device_path, "r+b")
     return WdPassportDevice(ScsiDevice(fileobj))
 
 
 def _device_option():
-    return typer.Option(..., "--device", "-d", help="Block device path, for example /dev/sdb.")
+    return typer.Option(
+        None, "--device", "-d",
+        help="Block device path (e.g. /dev/sdb). Omit to auto-detect the connected WD My Passport.")
+
+
+def _resolve_device(device: Optional[str]) -> str:
+    """Return the given device, or auto-detect the single connected WD drive."""
+    if device:
+        return device
+    from .devices import list_drives
+
+    drives = list_drives()
+    if not drives:
+        raise typer.BadParameter(
+            "No WD My Passport drive found. Connect one, or pass --device.")
+    if len(drives) > 1:
+        listing = "\n".join("  %s  %s" % (d.node, d.label().replace("\n", " "))
+                            for d in drives)
+        raise typer.BadParameter(
+            "Multiple WD Passport drives found; pass --device:\n" + listing)
+    return drives[0].node
 
 
 def _print_summary(summary: dict):
@@ -52,6 +73,7 @@ def _require_advanced(allowed: bool):
 @app.command()
 def status(device: str = _device_option()):
     """Show drive status."""
+    device = _resolve_device(device)
     _print_summary(status_summary(open_device(device), device))
 
 
@@ -107,6 +129,7 @@ def identify(
     """
     import time
 
+    device = _resolve_device(device)
     drive = open_device(device)
     original = None
     try:
@@ -142,6 +165,7 @@ def unlock(
     ),
 ):
     """Unlock the drive using a prompted password."""
+    device = _resolve_device(device)
     if password_stdin:
         password = sys.stdin.readline().rstrip("\n")
         if not password:
@@ -239,6 +263,7 @@ def erase(
     force: bool = typer.Option(False, "--force", help="Skip the typed confirmation (caller already confirmed, e.g. GUI)."),
 ):
     """Reset the data encryption key. This makes existing data unrecoverable."""
+    device = _resolve_device(device)
     if cipher is not None:
         _require_advanced(i_know_what_i_am_doing)
     if not force:

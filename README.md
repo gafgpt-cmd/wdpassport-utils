@@ -74,6 +74,10 @@ ln -sfn "$HOME/.local/share/wdpassport-utils-venv/bin/wdpassport-gui" "$HOME/.lo
 Run the CLI as root, or as a user that has permission to manage the raw block
 device. Use the disk path, such as `/dev/sdb`, not a partition path.
 
+`--device` is optional: omit it and the tool auto-detects the single connected
+WD My Passport (for example `sudo wdpassport status`). Pass `--device` only when
+several WD drives are attached — the tool then lists them so you can pick one.
+
 Show status:
 
 ```bash
