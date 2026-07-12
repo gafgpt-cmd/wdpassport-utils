@@ -109,12 +109,13 @@ ICONBASE="$STAGE/usr/share/icons/hicolor"
 mkdir -p "$ICONBASE/scalable/apps"
 cp "$HERE/icons/wdpassport.svg"        "$ICONBASE/scalable/apps/wdpassport.svg"
 cp "$HERE/icons/wdpassport-locked.svg" "$ICONBASE/scalable/apps/wdpassport-locked.svg"
+cp "$HERE/icons/wdpassport-off.svg"    "$ICONBASE/scalable/apps/wdpassport-off.svg"
 # Render raster sizes too (some panels need PNG); best-effort, SVG is enough otherwise.
 RSVG="$(command -v rsvg-convert || true)"
 INK="$(command -v inkscape || true)"
 for sz in 22 24 32 48 64 128; do
   dst="$ICONBASE/${sz}x${sz}/apps"; mkdir -p "$dst"
-  for name in wdpassport wdpassport-locked; do
+  for name in wdpassport wdpassport-locked wdpassport-off; do
     if [ -n "$RSVG" ]; then
       "$RSVG" -w "$sz" -h "$sz" "$HERE/icons/$name.svg" -o "$dst/$name.png" 2>/dev/null || true
     elif [ -n "$INK" ]; then

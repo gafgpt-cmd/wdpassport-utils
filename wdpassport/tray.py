@@ -118,15 +118,31 @@ def do_mount(partition: str) -> tuple:
     mp = _findmnt(partition)
     if mp:
         return True, mp
-    try:
-        proc = subprocess.run(["udisksctl", "mount", "-b", partition],
-                              capture_output=True, text=True, timeout=30)
-    except Exception as exc:
-        return False, str(exc)
-    mp = _findmnt(partition)
-    if mp:
-        return True, mp
-    return False, (proc.stderr or proc.stdout or "mount failed").strip()
+    last = "mount failed"
+    # A freshly-appeared partition (e.g. right after unlock) can be briefly not
+    # ready; retry with a settle so a single click succeeds.
+    for _ in range(3):
+        out = ""
+        try:
+            proc = subprocess.run(["udisksctl", "mount", "-b", partition],
+                                  capture_output=True, text=True, timeout=30)
+            out = (proc.stderr or proc.stdout or "").strip()
+        except Exception as exc:
+            out = str(exc)
+        mp = _findmnt(partition)
+        if mp:
+            return True, mp
+        if "already mounted" in out.lower() or "AlreadyMounted" in out:
+            return True, _findmnt(partition) or "mounted"
+        if out:
+            last = out
+        try:
+            subprocess.run(["udevadm", "settle", "--timeout=2"],
+                           capture_output=True)
+        except Exception:
+            pass
+        time.sleep(0.6)
+    return False, last
 
 
 def do_unmount(partition: str) -> tuple:
@@ -231,24 +247,39 @@ def main(argv=None) -> int:
             self._update_icon(drives)
 
         def _update_icon(self, drives):
-            any_locked = any(d.is_locked for d in drives)
             try:
-                if any_locked:
+                if not drives:
+                    # None connected / just powered off (Lock removes the device).
+                    self.ind.set_status(AppIndicator.IndicatorStatus.ACTIVE)
+                    self.ind.set_icon_full("wdpassport-off", "No WD Passport")
+                elif any(d.is_locked for d in drives):
                     # A locked drive should be visually obvious.
                     self.ind.set_status(AppIndicator.IndicatorStatus.ATTENTION)
                     self.ind.set_attention_icon_full(
                         "wdpassport-locked", "WD Passport locked")
-                    self.ind.set_icon_full(
-                        "wdpassport", "WD Passport")
+                    self.ind.set_icon_full("wdpassport-off", "WD Passport")
                 else:
                     self.ind.set_status(AppIndicator.IndicatorStatus.ACTIVE)
-                    self.ind.set_icon_full(
-                        "wdpassport", "WD Passport")
+                    self.ind.set_icon_full("wdpassport", "WD Passport")
             except Exception:
                 pass
 
+        def _drive_header_label(self, d):
+            """Two-line label. AppIndicator exports menus over DBusMenu, which
+            carries only a plain label string (no custom widgets/markup), but a
+            newline in that string renders as two rows.
+            row 1 = name + id, row 2 = size · port · status.
+            """
+            state = "LOCKED" if d.is_locked else "unlocked"
+            loc = "port %s" % d.usb_port if d.usb_port else d.node
+            line1 = "%s  #%s" % (d.alias or d.model, d.serial_tail)
+            line2 = "%s · %s · %s" % (d.size, loc, state)
+            if d.mountpoint:
+                line2 += " · %s" % d.mountpoint
+            return "%s\n%s" % (line1, line2)
+
         def _append_drive(self, d):
-            head = Gtk.MenuItem(label=d.label())
+            head = Gtk.MenuItem(label=self._drive_header_label(d))
             sub = Gtk.Menu()
             head.set_submenu(sub)
 
