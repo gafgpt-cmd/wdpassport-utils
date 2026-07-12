@@ -163,18 +163,21 @@ def read_handy_store_block1():
 	hint = sector_data[24:226]
 	return (iteration[0], salt, hint)
 
-def write_handy_store_block1(iteration, salt, hint):
-	sector_data = [0x00, 0x01, 0x44, 0x57] # "01WD" signature
-	sector_data += [0, 0, 0, 0] # reserved
+def build_handy_store_block1_sector(iteration, salt, hint):
+	sector_data = bytearray()
+	sector_data += bytes([0x00, 0x01, 0x44, 0x57]) # "01WD" signature
+	sector_data += bytes([0, 0, 0, 0]) # reserved
 	sector_data += struct.pack("<I", iteration)
-	sector_data += salt[0:8]
-	sector_data += [0, 0, 0, 0] # reserved
-	sector_data += hint[0:202]
-	sector_data += [0] * 285
-	sector_data += [hsb_checksum(bytes(sector_data))]
-	print(sector_data)
+	sector_data += salt[0:8].ljust(8, b"\x00")
+	sector_data += bytes([0, 0, 0, 0]) # reserved
+	sector_data += hint[0:202].ljust(202, b"\x00")
+	sector_data += bytes([0] * 285)
+	sector_data += bytes([hsb_checksum(sector_data)])
 	assert len(sector_data) == BLOCK_SIZE
-	write_handy_store(1, bytes(sector_data))
+	return bytes(sector_data)
+
+def write_handy_store_block1(iteration, salt, hint):
+	write_handy_store(1, build_handy_store_block1_sector(iteration, salt, hint))
 
 ## Perform password hashing with requirements obtained from the device
 def mk_password_block(passwd, iteration, salt):
@@ -371,6 +374,23 @@ def enable_mount(device):
 		f.write("- - -\n")
 	print(success("Device re-scanned."))
 
+def is_passport_device(disk_device):
+	device = disk_device
+	while device is not None:
+		if "ID_SERIAL" in device:
+			if device.properties["ID_SERIAL"].startswith("Western_Digital_My_"):
+				return True
+		device = device.parent
+	return False
+
+def find_passport_devices(context, forced_device=None):
+	passport_devices = []
+	for disk_device in context.list_devices(subsystem='block', DEVTYPE='disk'):
+		if forced_device and disk_device.device_node != forced_device:
+			continue
+		if is_passport_device(disk_device):
+			passport_devices.append(disk_device)
+	return passport_devices
 
 ## Main function, get parameters and manage operations
 def main(argv): 
@@ -391,20 +411,8 @@ def main(argv):
 	
 	## Get occurrences of "Passport" devices. Iterate over each disk block device
 	## and go up to its parents to find a "WD Passport" device.
-	passport_devices = []
 	context = pyudev.Context()
-	for disk_device in context.list_devices(subsystem='block', DEVTYPE='disk'):
-		# If -d is used, filter devices.
-		if args.device and disk_device.device_node != args.device:
-			continue
-
-		# Scan parent for device name.
-		device = disk_device
-		while device is not None:
-			if "ID_SERIAL" in device:
-				if device.properties["ID_SERIAL"].startswith("Western_Digital_My_"):
-					passport_devices.append(disk_device)
-			device = device.parent
+	passport_devices = find_passport_devices(context, args.device)
 
 	if len(passport_devices) == 0:
 		print(fail("No Western Digital Passport device found."))

@@ -16,7 +16,54 @@ Passwords given on the command line are converted into binary password data in a
 
 This tool was originally written by [0-duke](https://github.com/0-duke/wdpassport-utils) in 2015 based on reverse engineering research by [DanLukes](https://github.com/DanLukes) and an implementation by DanLukes and [KenMacD](https://github.com/KenMacD/wdpassport-utils). [crypto-universe](https://github.com/crypto-universe/wdpassport-utils) converted this project and the underlying SCSI interface library py_sg to Python 3. [JoshData](https://github.com/JoshData/wdpassport-utils) updated the library to work with the latest WD My Passport device.
 
-## Installing
+## Installing on MX Linux or Debian
+
+This project can be installed into a user-owned virtual environment instead of
+using `sudo pip`. The program still needs root privileges when it opens or
+rescans the physical drive.
+
+On MX Linux or Debian, from this repository, run:
+
+```
+./install-mx-debian.sh
+```
+
+The installer:
+
+* installs Debian package prerequisites with `apt-get`;
+* creates or updates `$HOME/.local/share/wdpassport-utils-venv`;
+* installs this checkout and its Python dependencies into that venv;
+* links `$HOME/.local/bin/wdpassport-utils.py` to the venv entrypoint.
+
+If `$HOME/.local/bin` is not in your `PATH`, add it in your shell profile:
+
+```
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+Then run the utility with a connected WD My Passport drive:
+
+```
+sudo wdpassport-utils.py
+```
+
+If you want to install without the helper script, install the Debian
+prerequisites first:
+
+```
+sudo apt-get install python3 python3-dev python3-venv python3-pip git build-essential libudev-dev
+```
+
+Then install into a virtual environment:
+
+```
+python3 -m venv "$HOME/.local/share/wdpassport-utils-venv"
+"$HOME/.local/share/wdpassport-utils-venv/bin/python" -m pip install --upgrade pip setuptools wheel
+"$HOME/.local/share/wdpassport-utils-venv/bin/python" -m pip install .
+ln -sfn "$HOME/.local/share/wdpassport-utils-venv/bin/wdpassport-utils.py" "$HOME/.local/bin/wdpassport-utils.py"
+```
+
+## Legacy Installing
 
 You'll need the Python 3 development headers to install this tool. On Ubuntu 22.04 LTS run:
 
@@ -31,8 +78,10 @@ sudo python3 -m pip install py3_sg
 
 On other Linux distributions you may need a different command.
 
-You *must* use sudo in this command.  Usually that's a bad idea when running pip but we need to be root to access the devices.
-Then use pip to install the source code in this repository:
+Older instructions used `sudo pip` because the program needs root access to the
+device. Prefer the MX/Debian virtual environment instructions above for new
+installs. To install the legacy way:
+
 ```
 sudo pip install git+https://github.com/0-duke/wdpassport-utils
 ```
