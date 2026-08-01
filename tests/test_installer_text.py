@@ -11,7 +11,8 @@ INSTALLER = ROOT / "install-linux.sh"
 
 
 class InstallerTests(unittest.TestCase):
-    def run_installer(self, package_manager: str, *, uv_available: bool = True):
+    def run_installer(self, package_manager: str, *, uv_available: bool = True,
+                      existing_venv: bool = False, bin_name: str = "commands"):
         with tempfile.TemporaryDirectory() as temp_dir:
             temp = Path(temp_dir)
             bin_dir = temp / "bin"
@@ -29,6 +30,7 @@ class InstallerTests(unittest.TestCase):
                     printf 'uv %s\n' "$*" >> "$WDPASSPORT_TEST_LOG"
                     if [[ "$1" == "venv" ]]; then
                       target="${@: -1}"
+                      [[ -d "$target" ]] && exit 2
                       mkdir -p "$target/bin"
                       touch "$target/bin/python"
                     fi
@@ -57,6 +59,13 @@ class InstallerTests(unittest.TestCase):
             fake_uv.chmod(0o755)
 
             env = os.environ.copy()
+            venv = temp / "venv"
+            if existing_venv:
+                (venv / "bin").mkdir(parents=True)
+                (venv / "bin/python").write_text("")
+                (venv / "bin/python").chmod(0o755)
+                (venv / "sentinel").write_text("keep")
+            commands_dir = temp / bin_name
             env.update(
                 {
                     "HOME": str(temp / "home"),
@@ -65,11 +74,11 @@ class InstallerTests(unittest.TestCase):
                         if not uv_available
                         else f"{bin_dir}:{env['PATH']}"
                     ),
-                    "WDPASSPORT_BIN_DIR": str(temp / "commands"),
+                    "WDPASSPORT_BIN_DIR": str(commands_dir),
                     "WDPASSPORT_FAKE_UV": str(fake_uv),
                     "WDPASSPORT_PACKAGE_MANAGER": package_manager,
                     "WDPASSPORT_TEST_LOG": str(log),
-                    "WDPASSPORT_VENV_DIR": str(temp / "venv"),
+                    "WDPASSPORT_VENV_DIR": str(venv),
                     "XDG_CONFIG_HOME": str(temp / "config"),
                     "XDG_DATA_HOME": str(temp / "data"),
                 }
@@ -86,9 +95,10 @@ class InstallerTests(unittest.TestCase):
             launcher = temp / "data/applications/dev.wdpassport.utility.desktop"
             autostart = temp / "config/autostart/wd-tray.desktop"
             artifacts = {
-                "cli": (temp / "commands/wdpassport").is_symlink(),
-                "gui": (temp / "commands/wdpassport-gui").is_symlink(),
-                "tray": (temp / "commands/wd-tray").is_symlink(),
+                "cli": (commands_dir / "wdpassport").is_symlink(),
+                "gui": (commands_dir / "wdpassport-gui").is_symlink(),
+                "tray": (commands_dir / "wd-tray").is_symlink(),
+                "venv_preserved": (venv / "sentinel").is_file(),
                 "icon": (temp / "data/icons/hicolor/scalable/apps/wdpassport.svg").is_file(),
                 "autostart": autostart.read_text() if autostart.exists() else "",
                 "tray_desktop": (temp / "data/applications/wd-tray.desktop").is_file(),
@@ -129,6 +139,20 @@ class InstallerTests(unittest.TestCase):
         self.assertIn("uv venv --system-site-packages", commands)
         self.assertIn("uv pip install --python", commands)
 
+    def test_existing_environment_is_updated_without_recreation(self):
+        result, commands, _, artifacts = self.run_installer("apt", existing_venv=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("uv venv", commands)
+        self.assertIn("uv pip install --python", commands)
+        self.assertTrue(artifacts["venv_preserved"])
+
+    def test_desktop_launcher_escapes_unusual_bin_path(self):
+        result, _, launcher, _ = self.run_installer("apt", bin_name="bin & tools")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('Exec="', launcher)
+        self.assertIn("bin & tools/wdpassport-gui", launcher)
+        self.assertNotIn("@BINDIR@", launcher)
+
     def test_dnf_install_preserves_gui_and_system_dependencies(self):
         result, commands, _, _ = self.run_installer("dnf")
 
@@ -138,6 +162,8 @@ class InstallerTests(unittest.TestCase):
         self.assertIn("gtk4", commands)
         self.assertIn("libadwaita", commands)
         self.assertIn("systemd-devel", commands)
+        self.assertIn("polkit", commands)
+        self.assertIn("udisks2", commands)
 
     def test_pacman_install_preserves_gui_and_system_dependencies(self):
         result, commands, _, _ = self.run_installer("pacman")
@@ -168,7 +194,7 @@ class InstallerTests(unittest.TestCase):
     def test_desktop_launcher_execs_gui(self):
         text = (ROOT / "wdpassport-gui.desktop.in").read_text()
         self.assertIn("Name=WD Passport Utility", text)
-        self.assertIn("Exec=@BINDIR@/wdpassport-gui", text)
+        self.assertIn('Exec="@BINDIR@/wdpassport-gui"', text)
         self.assertIn("Categories=Utility;", text)
 
     def test_cross_distribution_installer_has_generic_name(self):

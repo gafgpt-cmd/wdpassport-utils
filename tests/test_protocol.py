@@ -91,8 +91,9 @@ class ProtocolTests(unittest.TestCase):
         device.reset_data_encryption_key(0x30, b"\x01\x02\x03\x04")
         cdb, payload = transport.writes[-1]
         self.assertEqual(cdb[:6], b"\xC1\xE3\x01\x02\x03\x04")
-        self.assertEqual(cdb[8], 8)
-        self.assertEqual(payload[:8], b"\x45\x00\x00\x00\x30\x00\x00\x00")
+        self.assertEqual(cdb[8], 40)
+        self.assertEqual(payload[:8], b"\x45\x00\x00\x00\x30\x00\x01\x00")
+        self.assertEqual(len(payload[8:]), 32)
 
     def test_sleep_timer_uses_mode_page_1a(self):
         transport = FakeTransport()

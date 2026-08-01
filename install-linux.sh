@@ -42,6 +42,11 @@ install_system_dependencies() {
         git \
         build-essential \
         libudev-dev \
+        policykit-1 \
+        udisks2 \
+        util-linux \
+        libnotify-bin \
+        smartmontools \
         curl
       ;;
     dnf)
@@ -58,6 +63,11 @@ install_system_dependencies() {
         gcc-c++ \
         make \
         systemd-devel \
+        polkit \
+        udisks2 \
+        util-linux \
+        libnotify \
+        smartmontools \
         curl
       ;;
     pacman)
@@ -71,6 +81,11 @@ install_system_dependencies() {
         git \
         base-devel \
         systemd \
+        polkit \
+        udisks2 \
+        util-linux \
+        libnotify \
+        smartmontools \
         curl
       ;;
     zypper)
@@ -88,6 +103,11 @@ install_system_dependencies() {
         gcc \
         make \
         systemd-devel \
+        polkit \
+        udisks2 \
+        util-linux \
+        libnotify-tools \
+        smartmontools \
         curl
       ;;
     *)
@@ -122,7 +142,13 @@ mkdir -p "$BIN_DIR"
 UV_BIN=""
 ensure_uv
 
-"$UV_BIN" venv --system-site-packages --python python3 "$VENV_DIR"
+if [[ ! -x "$VENV_DIR/bin/python" ]]; then
+  if [[ -e "$VENV_DIR" ]]; then
+    "$UV_BIN" venv --clear --system-site-packages --python python3 "$VENV_DIR"
+  else
+    "$UV_BIN" venv --system-site-packages --python python3 "$VENV_DIR"
+  fi
+fi
 "$UV_BIN" pip install --python "$VENV_DIR/bin/python" --upgrade "$SCRIPT_DIR"
 
 ln -sfn "$VENV_DIR/bin/wdpassport" "$BIN_DIR/wdpassport"
@@ -131,8 +157,11 @@ ln -sfn "$VENV_DIR/bin/wd-tray" "$BIN_DIR/wd-tray"
 
 mkdir -p "$APPLICATIONS_DIR" "$AUTOSTART_DIR" "$ICON_DIR"
 rm -f "$APPLICATIONS_DIR/wdpassport-gui.desktop"
-sed "s|@BINDIR@|$BIN_DIR|g" "$SCRIPT_DIR/wdpassport-gui.desktop.in" > "$APPLICATIONS_DIR/dev.wdpassport.utility.desktop"
-sed "s|@BINDIR@|$BIN_DIR|g" "$SCRIPT_DIR/wd-tray.desktop.in" > "$APPLICATIONS_DIR/wd-tray.desktop"
+SED_BIN_DIR=${BIN_DIR//\\/\\\\}
+SED_BIN_DIR=${SED_BIN_DIR//&/\\&}
+SED_BIN_DIR=${SED_BIN_DIR//|/\\|}
+sed "s|@BINDIR@|$SED_BIN_DIR|g" "$SCRIPT_DIR/wdpassport-gui.desktop.in" > "$APPLICATIONS_DIR/dev.wdpassport.utility.desktop"
+sed "s|@BINDIR@|$SED_BIN_DIR|g" "$SCRIPT_DIR/wd-tray.desktop.in" > "$APPLICATIONS_DIR/wd-tray.desktop"
 cp "$APPLICATIONS_DIR/wd-tray.desktop" "$AUTOSTART_DIR/wd-tray.desktop"
 cp "$SCRIPT_DIR/packaging/icons/wdpassport.svg" "$ICON_DIR/wdpassport.svg"
 cp "$SCRIPT_DIR/packaging/icons/wdpassport-locked.svg" "$ICON_DIR/wdpassport-locked.svg"

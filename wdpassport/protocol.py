@@ -91,8 +91,11 @@ class WdPassportDevice:
         cdb = [0xC1, 0xE2, 0, 0, 0, 0, 0, 0, len(payload), 0]
         self._write(cdb, bytes(payload))
 
-    def reset_data_encryption_key(self, cipher: int, key_reset_enabler: bytes):
-        key_length = 0 if cipher == 0x30 else password_length_for_cipher(cipher)
+    def reset_data_encryption_key(self, cipher: int, key_reset_enabler: bytes,
+                                  key_length: Optional[int] = None):
+        key_length = key_length if key_length is not None else password_length_for_cipher(cipher)
+        if key_length not in (16, 32):
+            raise ValueError(f"unsupported key reset length {key_length}")
         cdb = [0xC1, 0xE3, *key_reset_enabler[:4], 0, 0, 8 + key_length, 0]
         payload = bytearray([0x45, 0, 0, 0, cipher, 0])
         payload.extend(u16be(key_length * 8))

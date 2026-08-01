@@ -19,6 +19,9 @@ _DEFAULT_TIMEOUT_MS = 20000
 # SCSI status byte values
 GOOD = 0x00
 CHECK_CONDITION = 0x02
+DRIVER_OK = 0x00
+DRIVER_SENSE = 0x08
+DRIVER_STATUS_MASK = 0x0F
 
 
 class SgioError(OSError):
@@ -82,19 +85,31 @@ def _run(fileobj, cdb: bytes, direction: int, dxferp, dxfer_len: int,
     # signals that sense data is present, so it must not be treated as an error
     # on its own. Only a transport error, a fatal sense key, or a non-GOOD /
     # non-CHECK-CONDITION status is a real failure.
-    sk = sense.raw[2] & 0x0F if hdr.sb_len_wr > 2 else 0
+    sense_data = sense.raw[:hdr.sb_len_wr]
+    response_code = sense_data[0] & 0x7F if sense_data else 0
+    if response_code in (0x72, 0x73) and len(sense_data) > 1:
+        sk = sense_data[1] & 0x0F
+    elif response_code in (0x70, 0x71) and len(sense_data) > 2:
+        sk = sense_data[2] & 0x0F
+    else:
+        sk = 0
     check_condition = hdr.status == CHECK_CONDITION
+    driver_result = hdr.driver_status & DRIVER_STATUS_MASK
     fatal = (
         hdr.host_status != 0
-        or (check_condition and sk not in (0x00, 0x01))
+        or driver_result not in (DRIVER_OK, DRIVER_SENSE)
+        or ((check_condition or driver_result == DRIVER_SENSE) and sk not in (0x00, 0x01))
         or (not check_condition and hdr.status != GOOD)
     )
     if fatal:
         meaning = _SENSE_KEY_MEANING.get(sk, f"sense key {sk:#x}")
         raise SgioError(
             f"{meaning} (status={hdr.status:#x}, "
-            f"host_status={hdr.host_status:#x}, sense_key={sk:#x})"
+            f"host_status={hdr.host_status:#x}, driver_status={hdr.driver_status:#x}, "
+            f"sense_key={sk:#x})"
         )
+    if hdr.resid < 0 or hdr.resid > dxfer_len:
+        raise SgioError(f"invalid residual byte count {hdr.resid} for transfer of {dxfer_len}")
     return hdr
 
 
@@ -112,8 +127,8 @@ _SENSE_KEY_MEANING = {
 def read(fileobj, cdb: bytes, size: int) -> bytes:
     """Send a data-in SCSI command and return the ``size`` bytes read."""
     buf = ctypes.create_string_buffer(size)
-    _run(fileobj, cdb, SG_DXFER_FROM_DEV, buf, size)
-    return buf.raw[:size]
+    hdr = _run(fileobj, cdb, SG_DXFER_FROM_DEV, buf, size)
+    return buf.raw[:size - hdr.resid]
 
 
 # Compatibility alias for the py3_sg call name used previously.
@@ -124,6 +139,9 @@ def write(fileobj, cdb: bytes, data: bytes) -> None:
     """Send a data-out SCSI command carrying ``data`` (may be empty)."""
     if data:
         buf = ctypes.create_string_buffer(bytes(data), len(data))
-        _run(fileobj, cdb, SG_DXFER_TO_DEV, buf, len(data))
+        hdr = _run(fileobj, cdb, SG_DXFER_TO_DEV, buf, len(data))
+        if hdr.resid:
+            raise SgioError(
+                f"partial data-out transfer: {len(data) - hdr.resid} of {len(data)} bytes written")
     else:
         _run(fileobj, cdb, SG_DXFER_NONE, None, 0)

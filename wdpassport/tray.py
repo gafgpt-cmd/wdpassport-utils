@@ -15,6 +15,7 @@ to the helper on stdin.
 
 import os
 import subprocess
+import threading
 import time
 
 from .devices import list_drives, set_alias, virtual_cd_nodes
@@ -224,6 +225,16 @@ def main(argv=None) -> int:
             self.rebuild()
             return True  # keep the periodic timer alive
 
+        def _run_background(self, operation):
+            """Run blocking device/process work without freezing GTK."""
+            def worker():
+                try:
+                    operation()
+                except Exception as exc:
+                    notify("WD Passport error", str(exc), "dialog-error")
+                GLib.idle_add(self.rebuild)
+            threading.Thread(target=worker, daemon=True).start()
+
         # --- menu construction ----------------------------------------------
         def rebuild(self):
             try:
@@ -327,21 +338,22 @@ def main(argv=None) -> int:
 
         # --- action handlers ------------------------------------------------
         def on_unlock(self, d):
+            pw = self._ask_password(d)
+            if pw is None:
+                return
+            self._run_background(lambda: self._unlock(d, pw))
+
+        def _unlock(self, d, pw):
             try:
-                pw = self._ask_password(d)
-                if pw is None:
-                    return
                 ok, msg = do_unlock(d.node, pw)
                 if not ok:
                     notify("Unlock failed", msg, "dialog-error")
-                    self.rebuild()
                     return
                 part = _wait_for_part(d.node)
                 if not part:
                     notify("Unlocked",
                            "Partition did not appear; try Mount.",
                            "dialog-warning")
-                    self.rebuild()
                     return
                 mok, mmsg = do_mount(part)
                 if mok:
@@ -352,10 +364,11 @@ def main(argv=None) -> int:
                            f"Unlocked; mount failed: {mmsg}", "dialog-warning")
             except Exception as exc:
                 notify("Unlock error", str(exc), "dialog-error")
-            finally:
-                self.rebuild()
 
         def on_identify(self, d):
+            self._run_background(lambda: self._identify(d))
+
+        def _identify(self, d):
             try:
                 ok, msg = do_identify(d.node)
                 if ok:
@@ -367,6 +380,9 @@ def main(argv=None) -> int:
                 notify("Identify error", str(exc), "dialog-error")
 
         def on_status(self, d):
+            self._run_background(lambda: self._status(d))
+
+        def _status(self, d):
             try:
                 ok, text = do_priv(d.node, "status")
                 notify("WD Passport status" if ok else "Status failed",
@@ -375,6 +391,9 @@ def main(argv=None) -> int:
                 notify("Status error", str(exc), "dialog-error")
 
         def on_health(self, d):
+            self._run_background(lambda: self._health(d))
+
+        def _health(self, d):
             try:
                 ok, text = do_priv(d.node, "health")
                 notify("WD Passport health" if ok else "Health check failed",
@@ -383,6 +402,9 @@ def main(argv=None) -> int:
                 notify("Health error", str(exc), "dialog-error")
 
         def on_sleep_off(self, d):
+            self._run_background(lambda: self._sleep_off(d))
+
+        def _sleep_off(self, d):
             try:
                 ok, text = do_priv(d.node, "sleep", "off")
                 notify("Standby disabled" if ok else "Sleep-off failed",
@@ -398,10 +420,13 @@ def main(argv=None) -> int:
                 notify("Cannot open control panel", str(exc), "dialog-error")
 
         def on_change_password(self, d):
+            creds = self._ask_change_password(d)
+            if creds is None:
+                return
+            self._run_background(lambda: self._change_password(d, creds))
+
+        def _change_password(self, d, creds):
             try:
-                creds = self._ask_change_password(d)
-                if creds is None:
-                    return
                 current, new = creds
                 if not current or not new:
                     notify("Change password",
@@ -426,24 +451,26 @@ def main(argv=None) -> int:
                 notify("Change password error", str(exc), "dialog-error")
 
         def on_mount(self, d):
+            self._run_background(lambda: self._mount(d))
+
+        def _mount(self, d):
             try:
                 ok, msg = do_mount(d.partition)
                 notify("Mounted" if ok else "Mount failed", msg,
                        "wdpassport" if ok else "dialog-error")
             except Exception as exc:
                 notify("Mount error", str(exc), "dialog-error")
-            finally:
-                self.rebuild()
 
         def on_unmount(self, d):
+            self._run_background(lambda: self._unmount(d))
+
+        def _unmount(self, d):
             try:
                 ok, msg = do_unmount(d.partition)
                 notify("Unmounted" if ok else "Unmount failed", msg or "",
                        "wdpassport" if ok else "dialog-error")
             except Exception as exc:
                 notify("Unmount error", str(exc), "dialog-error")
-            finally:
-                self.rebuild()
 
         def on_open(self, d):
             try:
@@ -453,13 +480,15 @@ def main(argv=None) -> int:
                 notify("Open failed", str(exc), "dialog-error")
 
         def on_lock(self, d):
+            self._run_background(lambda: self._lock(d))
+
+        def _lock(self, d):
             try:
                 if d.mountpoint:
                     uok, umsg = do_unmount(d.partition)
                     if not uok:
                         notify("Lock failed", f"Unmount failed: {umsg}",
                                "dialog-error")
-                        self.rebuild()
                         return
                 ok, msg = do_poweroff(d.node, d.serial)
                 if ok:
@@ -470,8 +499,6 @@ def main(argv=None) -> int:
                     notify("Lock failed", msg, "dialog-error")
             except Exception as exc:
                 notify("Lock error", str(exc), "dialog-error")
-            finally:
-                self.rebuild()
 
         def on_rename(self, d):
             try:

@@ -50,8 +50,9 @@ From this repository, run:
 
 The installer automatically detects `apt`, `dnf`, `pacman`, or `zypper`, then:
 
-* installs Python, PyGObject, GTK4, libadwaita, compiler, and libudev/systemd
-  development prerequisites using the native package manager;
+* installs Python, PyGObject, GTK4, libadwaita, PolicyKit, udisks2, util-linux,
+  notifications, SMART tools, compiler, and libudev/systemd development
+  prerequisites using the native package manager;
 * installs `uv` into `$HOME/.local/bin` when it is not already available;
 * creates or updates `$HOME/.local/share/wdpassport-utils-venv` with access to
   the distro-provided GTK bindings;
@@ -161,7 +162,7 @@ you will need to create a new partition table and filesystem.
 ## GUI
 
 ```bash
-sudo wdpassport-gui
+wdpassport-gui
 ```
 
 The GUI provides normal Linux controls: status, unlock, password dialogs, sleep

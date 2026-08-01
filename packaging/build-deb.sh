@@ -45,13 +45,13 @@ mkwrap wdpassport     wdpassport.cli
 mkwrap wdpassport-gui wdpassport.gui
 mkwrap wd-tray        wdpassport.tray
 
-# --- 3. privileged helper (single pkexec target for ALL root subcommands) ---
+# --- 3. privileged helper (allowlisted device-management commands only) -----
 cat > "$STAGE/usr/lib/wdpassport/wd-priv" <<'EOF'
 #!/bin/sh
-# Runs the wdpassport CLI as root via pkexec. Any subcommand + args are passed
-# through; stdin is preserved (used by unlock/password --stdin). Callers invoke:
+# Runs a narrow PolicyKit boundary. Local-file commands such as blob generation
+# are rejected; stdin is preserved for password actions. Callers invoke:
 #   pkexec /usr/lib/wdpassport/wd-priv <subcommand> [args...]
-exec /usr/bin/python3 -c 'import sys; from wdpassport.cli import main; sys.exit(main())' "$@"
+exec /usr/bin/python3 -c 'import sys; from wdpassport.privileged import main; sys.exit(main())' "$@"
 EOF
 chmod 755 "$STAGE/usr/lib/wdpassport/wd-priv"
 

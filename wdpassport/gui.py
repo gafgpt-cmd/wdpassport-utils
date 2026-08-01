@@ -12,6 +12,21 @@ import subprocess
 
 from .launchers import privileged_command
 
+COMMAND_TIMEOUT_SECONDS = 90
+
+
+def run_cmd(cmd, stdin_text=None, timeout=COMMAND_TIMEOUT_SECONDS):
+    """Run a bounded child command and return ``(returncode, stdout, stderr)``."""
+    try:
+        proc = subprocess.run(
+            cmd, input=stdin_text, capture_output=True, text=True, timeout=timeout,
+        )
+        return proc.returncode, proc.stdout, proc.stderr
+    except subprocess.TimeoutExpired:
+        return 124, "", f"Command timed out after {timeout} seconds."
+    except FileNotFoundError as exc:
+        return 127, "", str(exc)
+
 
 def priv(*args):
     """Build a ``pkexec`` argv for the privileged helper."""
@@ -59,16 +74,6 @@ def main(argv=None) -> int:
     .unlocked { color: #2ec27e; font-weight: bold; }
     .drive-badge { padding: 4px 10px; border-radius: 6px; }
     """
-
-    def run_cmd(cmd, stdin_text=None):
-        """Run ``cmd`` (list), feeding optional stdin. Returns (rc, out, err)."""
-        try:
-            proc = subprocess.run(
-                cmd, input=stdin_text, capture_output=True, text=True,
-            )
-            return proc.returncode, proc.stdout, proc.stderr
-        except FileNotFoundError as exc:
-            return 127, "", str(exc)
 
     def priv_error(rc, out, err):
         """Return a friendly message for a failed pkexec run, or None on success."""
