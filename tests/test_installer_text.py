@@ -1,20 +1,146 @@
+import os
 from pathlib import Path
+import subprocess
+import tempfile
+import textwrap
 import unittest
 
 
 ROOT = Path(__file__).resolve().parents[1]
+INSTALLER = ROOT / "install-mx-debian.sh"
 
 
-class InstallerTextTests(unittest.TestCase):
-    def test_installer_mentions_gui_prerequisites_and_launchers(self):
-        text = (ROOT / "install-mx-debian.sh").read_text()
-        self.assertIn("python3-gi", text)
-        self.assertIn("gir1.2-gtk-4.0", text)
-        self.assertIn("gir1.2-adw-1", text)
-        self.assertIn("wdpassport", text)
-        self.assertIn("wdpassport-gui", text)
-        self.assertIn(".local/share/applications", text)
-        self.assertIn("--system-site-packages", text)
+class InstallerTests(unittest.TestCase):
+    def run_installer(self, package_manager: str, *, uv_available: bool = True):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp = Path(temp_dir)
+            bin_dir = temp / "bin"
+            bin_dir.mkdir()
+            log = temp / "commands.log"
+
+            (bin_dir / "sudo").write_text(
+                "#!/usr/bin/env bash\nprintf 'sudo %s\\n' \"$*\" >> \"$WDPASSPORT_TEST_LOG\"\n"
+            )
+            fake_uv = temp / "fake-uv"
+            fake_uv.write_text(
+                textwrap.dedent(
+                    """\
+                    #!/usr/bin/env bash
+                    printf 'uv %s\n' "$*" >> "$WDPASSPORT_TEST_LOG"
+                    if [[ "$1" == "venv" ]]; then
+                      target="${@: -1}"
+                      mkdir -p "$target/bin"
+                      touch "$target/bin/python"
+                    fi
+                    """
+                )
+            )
+            if uv_available:
+                (bin_dir / "uv").symlink_to(fake_uv)
+            else:
+                (bin_dir / "curl").write_text(
+                    textwrap.dedent(
+                        """\
+                        #!/usr/bin/env bash
+                        output="${@: -1}"
+                        cat > "$output" <<'INSTALLER'
+                        #!/usr/bin/env sh
+                        echo 'installing uv'
+                        cp "$WDPASSPORT_FAKE_UV" "$UV_INSTALL_DIR/uv"
+                        chmod +x "$UV_INSTALL_DIR/uv"
+                        INSTALLER
+                        """
+                    )
+                )
+                (bin_dir / "curl").chmod(0o755)
+            (bin_dir / "sudo").chmod(0o755)
+            fake_uv.chmod(0o755)
+
+            env = os.environ.copy()
+            env.update(
+                {
+                    "HOME": str(temp / "home"),
+                    "PATH": (
+                        f"{bin_dir}:/usr/bin:/bin"
+                        if not uv_available
+                        else f"{bin_dir}:{env['PATH']}"
+                    ),
+                    "WDPASSPORT_BIN_DIR": str(temp / "commands"),
+                    "WDPASSPORT_FAKE_UV": str(fake_uv),
+                    "WDPASSPORT_PACKAGE_MANAGER": package_manager,
+                    "WDPASSPORT_TEST_LOG": str(log),
+                    "WDPASSPORT_VENV_DIR": str(temp / "venv"),
+                    "XDG_DATA_HOME": str(temp / "data"),
+                }
+            )
+            result = subprocess.run(
+                [str(INSTALLER)],
+                cwd=ROOT,
+                env=env,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            commands = log.read_text() if log.exists() else ""
+            launcher = temp / "data/applications/wdpassport-gui.desktop"
+            return result, commands, launcher.read_text() if launcher.exists() else ""
+
+    def test_apt_install_uses_uv_and_preserves_gui_and_desktop_support(self):
+        result, commands, launcher = self.run_installer("apt")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("sudo apt-get update", commands)
+        self.assertIn("python3-gi", commands)
+        self.assertIn("gir1.2-gtk-4.0", commands)
+        self.assertIn("gir1.2-adw-1", commands)
+        self.assertNotIn("python3-pip", commands)
+        self.assertIn("uv venv --system-site-packages", commands)
+        self.assertIn("uv pip install --python", commands)
+        self.assertIn("Exec=", launcher)
+        self.assertIn("wdpassport-gui", launcher)
+
+    def test_installer_bootstraps_uv_when_it_is_not_on_path(self):
+        result, commands, _ = self.run_installer("apt", uv_available=False)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("uv venv --system-site-packages", commands)
+        self.assertIn("uv pip install --python", commands)
+
+    def test_dnf_install_preserves_gui_and_system_dependencies(self):
+        result, commands, _ = self.run_installer("dnf")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("sudo dnf install -y", commands)
+        self.assertIn("python3-gobject", commands)
+        self.assertIn("gtk4", commands)
+        self.assertIn("libadwaita", commands)
+        self.assertIn("systemd-devel", commands)
+
+    def test_pacman_install_preserves_gui_and_system_dependencies(self):
+        result, commands, _ = self.run_installer("pacman")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("sudo pacman -Syu --needed --noconfirm", commands)
+        self.assertIn("python-gobject", commands)
+        self.assertIn("gtk4", commands)
+        self.assertIn("libadwaita", commands)
+        self.assertIn("systemd", commands)
+
+    def test_zypper_install_preserves_gui_and_system_dependencies(self):
+        result, commands, _ = self.run_installer("zypper")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("sudo zypper --non-interactive install", commands)
+        self.assertIn("python3-gobject", commands)
+        self.assertIn("typelib-1_0-Gtk-4_0", commands)
+        self.assertIn("typelib-1_0-Adw-1", commands)
+        self.assertIn("systemd-devel", commands)
+
+    def test_unsupported_package_manager_fails_with_supported_choices(self):
+        result, _, _ = self.run_installer("apk")
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("apt, dnf, pacman, or zypper", result.stderr)
 
     def test_desktop_launcher_execs_gui(self):
         text = (ROOT / "wdpassport-gui.desktop.in").read_text()
