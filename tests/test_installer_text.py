@@ -7,7 +7,7 @@ import unittest
 
 
 ROOT = Path(__file__).resolve().parents[1]
-INSTALLER = ROOT / "install-mx-debian.sh"
+INSTALLER = ROOT / "install-linux.sh"
 
 
 class InstallerTests(unittest.TestCase):
@@ -70,6 +70,7 @@ class InstallerTests(unittest.TestCase):
                     "WDPASSPORT_PACKAGE_MANAGER": package_manager,
                     "WDPASSPORT_TEST_LOG": str(log),
                     "WDPASSPORT_VENV_DIR": str(temp / "venv"),
+                    "XDG_CONFIG_HOME": str(temp / "config"),
                     "XDG_DATA_HOME": str(temp / "data"),
                 }
             )
@@ -82,11 +83,25 @@ class InstallerTests(unittest.TestCase):
                 check=False,
             )
             commands = log.read_text() if log.exists() else ""
-            launcher = temp / "data/applications/wdpassport-gui.desktop"
-            return result, commands, launcher.read_text() if launcher.exists() else ""
+            launcher = temp / "data/applications/dev.wdpassport.utility.desktop"
+            autostart = temp / "config/autostart/wd-tray.desktop"
+            artifacts = {
+                "cli": (temp / "commands/wdpassport").is_symlink(),
+                "gui": (temp / "commands/wdpassport-gui").is_symlink(),
+                "tray": (temp / "commands/wd-tray").is_symlink(),
+                "icon": (temp / "data/icons/hicolor/scalable/apps/wdpassport.svg").is_file(),
+                "autostart": autostart.read_text() if autostart.exists() else "",
+                "tray_desktop": (temp / "data/applications/wd-tray.desktop").is_file(),
+            }
+            return (
+                result,
+                commands,
+                launcher.read_text() if launcher.exists() else "",
+                artifacts,
+            )
 
     def test_apt_install_uses_uv_and_preserves_gui_and_desktop_support(self):
-        result, commands, launcher = self.run_installer("apt")
+        result, commands, launcher, artifacts = self.run_installer("apt")
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("sudo apt-get update", commands)
@@ -98,16 +113,24 @@ class InstallerTests(unittest.TestCase):
         self.assertIn("uv pip install --python", commands)
         self.assertIn("Exec=", launcher)
         self.assertIn("wdpassport-gui", launcher)
+        self.assertIn("Icon=wdpassport", launcher)
+        self.assertTrue(artifacts["cli"])
+        self.assertTrue(artifacts["gui"])
+        self.assertTrue(artifacts["tray"])
+        self.assertTrue(artifacts["icon"])
+        self.assertIn("Exec=", artifacts["autostart"])
+        self.assertIn("wd-tray", artifacts["autostart"])
+        self.assertTrue(artifacts["tray_desktop"])
 
     def test_installer_bootstraps_uv_when_it_is_not_on_path(self):
-        result, commands, _ = self.run_installer("apt", uv_available=False)
+        result, commands, _, _ = self.run_installer("apt", uv_available=False)
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("uv venv --system-site-packages", commands)
         self.assertIn("uv pip install --python", commands)
 
     def test_dnf_install_preserves_gui_and_system_dependencies(self):
-        result, commands, _ = self.run_installer("dnf")
+        result, commands, _, _ = self.run_installer("dnf")
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("sudo dnf install -y", commands)
@@ -117,7 +140,7 @@ class InstallerTests(unittest.TestCase):
         self.assertIn("systemd-devel", commands)
 
     def test_pacman_install_preserves_gui_and_system_dependencies(self):
-        result, commands, _ = self.run_installer("pacman")
+        result, commands, _, _ = self.run_installer("pacman")
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("sudo pacman -Syu --needed --noconfirm", commands)
@@ -127,7 +150,7 @@ class InstallerTests(unittest.TestCase):
         self.assertIn("systemd", commands)
 
     def test_zypper_install_preserves_gui_and_system_dependencies(self):
-        result, commands, _ = self.run_installer("zypper")
+        result, commands, _, _ = self.run_installer("zypper")
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("sudo zypper --non-interactive install", commands)
@@ -137,7 +160,7 @@ class InstallerTests(unittest.TestCase):
         self.assertIn("systemd-devel", commands)
 
     def test_unsupported_package_manager_fails_with_supported_choices(self):
-        result, _, _ = self.run_installer("apk")
+        result, _, _, _ = self.run_installer("apk")
 
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("apt, dnf, pacman, or zypper", result.stderr)
@@ -145,8 +168,12 @@ class InstallerTests(unittest.TestCase):
     def test_desktop_launcher_execs_gui(self):
         text = (ROOT / "wdpassport-gui.desktop.in").read_text()
         self.assertIn("Name=WD Passport Utility", text)
-        self.assertIn("Exec=wdpassport-gui", text)
+        self.assertIn("Exec=@BINDIR@/wdpassport-gui", text)
         self.assertIn("Categories=Utility;", text)
+
+    def test_cross_distribution_installer_has_generic_name(self):
+        self.assertTrue((ROOT / "install-linux.sh").is_file())
+        self.assertFalse((ROOT / "install-mx-debian.sh").exists())
 
 
 if __name__ == "__main__":

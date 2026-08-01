@@ -18,6 +18,7 @@ import subprocess
 import time
 
 from .devices import list_drives, set_alias, virtual_cd_nodes
+from .launchers import privileged_command
 
 REFRESH_SECONDS = 5
 
@@ -28,12 +29,7 @@ REFRESH_SECONDS = 5
 
 def priv(*args):
     """Build a pkexec invocation of the privileged wdpassport helper."""
-    base = (
-        "/usr/lib/wdpassport/wd-priv"
-        if os.path.exists("/usr/lib/wdpassport/wd-priv")
-        else os.environ.get("WDPASSPORT_BIN", "/usr/bin/wdpassport")
-    )
-    return ["pkexec", base, *args]
+    return privileged_command(*args)
 
 
 def _pkexec_message(returncode: int, proc=None) -> str:

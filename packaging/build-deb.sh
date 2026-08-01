@@ -93,7 +93,7 @@ cp "$STAGE/usr/share/applications/wd-tray.desktop" \
    "$STAGE/etc/xdg/autostart/wd-tray.desktop"
 echo 'X-GNOME-Autostart-enabled=true' >> "$STAGE/etc/xdg/autostart/wd-tray.desktop"
 
-cat > "$STAGE/usr/share/applications/wdpassport-gui.desktop" <<'EOF'
+cat > "$STAGE/usr/share/applications/dev.wdpassport.utility.desktop" <<'EOF'
 [Desktop Entry]
 Type=Application
 Name=WD Passport Utility

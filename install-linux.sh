@@ -4,6 +4,8 @@ set -euo pipefail
 VENV_DIR="${WDPASSPORT_VENV_DIR:-$HOME/.local/share/wdpassport-utils-venv}"
 BIN_DIR="${WDPASSPORT_BIN_DIR:-$HOME/.local/bin}"
 APPLICATIONS_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
+AUTOSTART_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/autostart"
+ICON_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/icons/hicolor/scalable/apps"
 # Default desktop launcher directory: $HOME/.local/share/applications
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -36,6 +38,7 @@ install_system_dependencies() {
         python3-gi \
         gir1.2-gtk-4.0 \
         gir1.2-adw-1 \
+        gir1.2-ayatanaappindicator3-0.1 \
         git \
         build-essential \
         libudev-dev \
@@ -49,6 +52,7 @@ install_system_dependencies() {
         python3-gobject \
         gtk4 \
         libadwaita \
+        libayatana-appindicator-gtk3 \
         git \
         gcc \
         gcc-c++ \
@@ -63,6 +67,7 @@ install_system_dependencies() {
         python-gobject \
         gtk4 \
         libadwaita \
+        libayatana-appindicator \
         git \
         base-devel \
         systemd \
@@ -78,6 +83,7 @@ install_system_dependencies() {
         typelib-1_0-Adw-1 \
         gtk4 \
         libadwaita-devel \
+        typelib-1_0-AyatanaAppIndicator3-0_1 \
         git \
         gcc \
         make \
@@ -121,9 +127,22 @@ ensure_uv
 
 ln -sfn "$VENV_DIR/bin/wdpassport" "$BIN_DIR/wdpassport"
 ln -sfn "$VENV_DIR/bin/wdpassport-gui" "$BIN_DIR/wdpassport-gui"
+ln -sfn "$VENV_DIR/bin/wd-tray" "$BIN_DIR/wd-tray"
 
-mkdir -p "$APPLICATIONS_DIR"
-sed "s|@BINDIR@|$BIN_DIR|g" "$SCRIPT_DIR/wdpassport-gui.desktop.in" > "$APPLICATIONS_DIR/wdpassport-gui.desktop"
+mkdir -p "$APPLICATIONS_DIR" "$AUTOSTART_DIR" "$ICON_DIR"
+rm -f "$APPLICATIONS_DIR/wdpassport-gui.desktop"
+sed "s|@BINDIR@|$BIN_DIR|g" "$SCRIPT_DIR/wdpassport-gui.desktop.in" > "$APPLICATIONS_DIR/dev.wdpassport.utility.desktop"
+sed "s|@BINDIR@|$BIN_DIR|g" "$SCRIPT_DIR/wd-tray.desktop.in" > "$APPLICATIONS_DIR/wd-tray.desktop"
+cp "$APPLICATIONS_DIR/wd-tray.desktop" "$AUTOSTART_DIR/wd-tray.desktop"
+cp "$SCRIPT_DIR/packaging/icons/wdpassport.svg" "$ICON_DIR/wdpassport.svg"
+cp "$SCRIPT_DIR/packaging/icons/wdpassport-locked.svg" "$ICON_DIR/wdpassport-locked.svg"
+cp "$SCRIPT_DIR/packaging/icons/wdpassport-off.svg" "$ICON_DIR/wdpassport-off.svg"
+if command -v update-desktop-database >/dev/null 2>&1; then
+  update-desktop-database "$APPLICATIONS_DIR" || true
+fi
+if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+  gtk-update-icon-cache -q -f -t "${ICON_DIR%/scalable/apps}" || true
+fi
 
 cat <<EOF
 wdpassport-utils installed.
@@ -131,13 +150,17 @@ wdpassport-utils installed.
 Entrypoints:
   $BIN_DIR/wdpassport
   $BIN_DIR/wdpassport-gui
+  $BIN_DIR/wd-tray
 
 Desktop launcher:
-  $APPLICATIONS_DIR/wdpassport-gui.desktop
+  $APPLICATIONS_DIR/dev.wdpassport.utility.desktop
+
+Tray autostart:
+  $AUTOSTART_DIR/wd-tray.desktop
 
 Run with a connected WD My Passport drive:
   sudo "$BIN_DIR/wdpassport" status --device /dev/sdX
-  sudo "$BIN_DIR/wdpassport-gui"
+  "$BIN_DIR/wdpassport-gui"
 
 If $BIN_DIR is not in PATH, add this to your shell profile:
   export PATH="\$HOME/.local/bin:\$PATH"

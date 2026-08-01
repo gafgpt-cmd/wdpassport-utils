@@ -2,6 +2,7 @@
 Type=Application
 Name=WD Passport Utility
 Comment=Manage WD My Passport hardware encryption and power settings
-Exec=wdpassport-gui
+Exec=@BINDIR@/wdpassport-gui
+Icon=wdpassport
 Terminal=false
 Categories=Utility;

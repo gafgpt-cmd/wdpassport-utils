@@ -45,7 +45,7 @@ drive.
 From this repository, run:
 
 ```bash
-./install-mx-debian.sh
+./install-linux.sh
 ```
 
 The installer automatically detects `apt`, `dnf`, `pacman`, or `zypper`, then:
@@ -57,8 +57,10 @@ The installer automatically detects `apt`, `dnf`, `pacman`, or `zypper`, then:
   the distro-provided GTK bindings;
 * installs this checkout and its Python dependencies into that environment
   through `uv`;
-* links `$HOME/.local/bin/wdpassport` and `$HOME/.local/bin/wdpassport-gui`;
-* installs a desktop launcher under `$HOME/.local/share/applications`.
+* links `$HOME/.local/bin/wdpassport`, `$HOME/.local/bin/wdpassport-gui`, and
+  `$HOME/.local/bin/wd-tray`;
+* installs the application icon and desktop launcher;
+* installs a tray autostart entry under `$HOME/.config/autostart`.
 
 If `$HOME/.local/bin` is not in your `PATH`, add it in your shell profile:
 
@@ -68,7 +70,7 @@ export PATH="$HOME/.local/bin:$PATH"
 
 For automation or unusual systems, set `WDPASSPORT_PACKAGE_MANAGER` explicitly
 to `apt`, `dnf`, `pacman`, or `zypper`. After installing the system prerequisites
-listed in `install-mx-debian.sh`, the equivalent manual `uv` commands are:
+listed in `install-linux.sh`, the equivalent manual `uv` commands are:
 
 ```bash
 uv venv --system-site-packages --python python3 "$HOME/.local/share/wdpassport-utils-venv"

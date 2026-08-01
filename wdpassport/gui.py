@@ -10,13 +10,20 @@ runs on a worker thread and marshals its result back to the main loop with
 import os
 import subprocess
 
+from .launchers import privileged_command
+
 
 def priv(*args):
     """Build a ``pkexec`` argv for the privileged helper."""
-    base = ("/usr/lib/wdpassport/wd-priv"
-            if os.path.exists("/usr/lib/wdpassport/wd-priv")
-            else os.environ.get("WDPASSPORT_BIN", "/usr/bin/wdpassport"))
-    return ["pkexec", base, *args]
+    return privileged_command(*args)
+
+
+def activate_main_window(app, window_factory):
+    """Present the one control window owned by the application."""
+    window = app.props.active_window
+    if window is None:
+        window = window_factory(app)
+    window.present()
 
 
 def main(argv=None) -> int:
@@ -654,7 +661,7 @@ def main(argv=None) -> int:
                 super().__init__(application_id="dev.wdpassport.utility")
 
             def do_activate(self):
-                PassportWindow(self).present()
+                activate_main_window(self, PassportWindow)
     else:
         class PassportApp(Gtk.Application):
             def __init__(self):
@@ -663,7 +670,7 @@ def main(argv=None) -> int:
                     flags=Gio.ApplicationFlags.FLAGS_NONE)
 
             def do_activate(self):
-                PassportWindow(self).present()
+                activate_main_window(self, PassportWindow)
 
     # Pass None (not the stripped argv) so GApplication activates and shows the
     # window; an empty argv list is read as argc=0 and returns without activating.
