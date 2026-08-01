@@ -23,6 +23,7 @@ def activate_main_window(app, window_factory):
     window = app.props.active_window
     if window is None:
         window = window_factory(app)
+    window.set_icon_name("wdpassport")
     window.present()
 
 

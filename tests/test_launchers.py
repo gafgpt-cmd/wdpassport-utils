@@ -48,6 +48,7 @@ class SingleWindowTests(unittest.TestCase):
         activate_main_window(app, factory)
 
         factory.assert_not_called()
+        existing.set_icon_name.assert_called_once_with("wdpassport")
         existing.present.assert_called_once_with()
 
     def test_first_activation_creates_and_presents_window(self):
@@ -61,6 +62,7 @@ class SingleWindowTests(unittest.TestCase):
         activate_main_window(app, factory)
 
         factory.assert_called_once_with(app)
+        created.set_icon_name.assert_called_once_with("wdpassport")
         created.present.assert_called_once_with()
 
 
