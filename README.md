@@ -70,14 +70,18 @@ export PATH="$HOME/.local/bin:$PATH"
 ```
 
 For automation or unusual systems, set `WDPASSPORT_PACKAGE_MANAGER` explicitly
-to `apt`, `dnf`, `pacman`, or `zypper`. After installing the system prerequisites
-listed in `install-linux.sh`, the equivalent manual `uv` commands are:
+to `apt`, `dnf`, `pacman`, or `zypper`. `WDPASSPORT_VENV_DIR` and
+`WDPASSPORT_BIN_DIR` override the virtual-environment and command directories;
+the standard `XDG_DATA_HOME` and `XDG_CONFIG_HOME` variables control desktop
+data and autostart locations. After installing the system prerequisites listed
+in `install-linux.sh`, the equivalent manual `uv` commands are:
 
 ```bash
 uv venv --system-site-packages --python python3 "$HOME/.local/share/wdpassport-utils-venv"
 uv pip install --python "$HOME/.local/share/wdpassport-utils-venv/bin/python" --upgrade .
 ln -sfn "$HOME/.local/share/wdpassport-utils-venv/bin/wdpassport" "$HOME/.local/bin/wdpassport"
 ln -sfn "$HOME/.local/share/wdpassport-utils-venv/bin/wdpassport-gui" "$HOME/.local/bin/wdpassport-gui"
+ln -sfn "$HOME/.local/share/wdpassport-utils-venv/bin/wd-tray" "$HOME/.local/bin/wd-tray"
 ```
 
 ## CLI Usage
