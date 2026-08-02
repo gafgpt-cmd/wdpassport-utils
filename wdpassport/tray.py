@@ -218,6 +218,7 @@ def main(argv=None) -> int:
             self.ind.set_title("WD Passport")
             self.menu = Gtk.Menu()
             self.ind.set_menu(self.menu)
+            self._rebuilding = False
             self.rebuild()
             GLib.timeout_add_seconds(REFRESH_SECONDS, self._tick)
 
@@ -237,11 +238,26 @@ def main(argv=None) -> int:
 
         # --- menu construction ----------------------------------------------
         def rebuild(self):
-            try:
-                drives = list_drives()
-            except Exception as exc:
-                drives = []
-                notify("WD Passport", f"Discovery failed: {exc}", "dialog-error")
+            if self._rebuilding:
+                return False
+            self._rebuilding = True
+
+            def worker():
+                try:
+                    drives = list_drives()
+                    error = None
+                except Exception as exc:
+                    drives = []
+                    error = str(exc)
+                GLib.idle_add(self._finish_rebuild, drives, error)
+
+            threading.Thread(target=worker, daemon=True).start()
+            return False
+
+        def _finish_rebuild(self, drives, error=None):
+            self._rebuilding = False
+            if error is not None:
+                notify("WD Passport", f"Discovery failed: {error}", "dialog-error")
 
             for child in self.menu.get_children():
                 self.menu.remove(child)
@@ -267,6 +283,7 @@ def main(argv=None) -> int:
             self.menu.show_all()
 
             self._update_icon(drives)
+            return False
 
         def _update_icon(self, drives):
             try:

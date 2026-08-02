@@ -216,15 +216,32 @@ def main(argv=None) -> int:
                 self.set_message("No drive selected.")
             return drive
 
-        def refresh_devices(self, preserve_serial=None):
+        def refresh_devices(self, preserve_serial=None, completion_message=None):
             if preserve_serial is None:
                 cur = self.selected_drive()
                 preserve_serial = cur.serial if cur else None
-            try:
-                self.drives = list_drives()
-            except Exception as exc:  # discovery must never crash the window
-                self.drives = []
-                self.set_message(f"Drive scan failed: {exc}")
+
+            self.refresh_button.set_sensitive(False)
+
+            def worker():
+                try:
+                    drives = list_drives()
+                    error = None
+                except Exception as exc:
+                    drives = []
+                    error = str(exc)
+                GLib.idle_add(
+                    self._apply_drives, drives, preserve_serial, error,
+                    completion_message)
+
+            threading.Thread(target=worker, daemon=True).start()
+
+        def _apply_drives(self, drives, preserve_serial, error=None,
+                          completion_message=None):
+            self.refresh_button.set_sensitive(True)
+            self.drives = drives
+            if error is not None:
+                self.set_message(f"Drive scan failed: {error}")
             self.combo.remove_all()
             for drive in self.drives:
                 self.combo.append_text(drive.label())
@@ -239,6 +256,9 @@ def main(argv=None) -> int:
                 self.set_message("No WD My Passport drive found. "
                                  "Connect a drive and press Refresh.")
             self._update_selection()
+            if completion_message is not None and error is None:
+                self.set_message(completion_message)
+            return False
 
         def _update_selection(self):
             drive = self.selected_drive()
@@ -288,8 +308,7 @@ def main(argv=None) -> int:
 
         def _worker_done(self, msg):
             self._set_busy(False)
-            self.refresh_devices()
-            self.set_message(msg)
+            self.refresh_devices(completion_message=msg)
             return False
 
         # -- privileged actions -------------------------------------------
@@ -471,11 +490,14 @@ def main(argv=None) -> int:
             if not drive.mountpoint:
                 self.set_message("Drive is not mounted.")
                 return
-            rc, out, err = run_cmd(["xdg-open", drive.mountpoint])
-            if rc == 0:
-                self.set_message(f"Opened {drive.mountpoint}")
-            else:
-                self.set_message(f"Open failed: {(err or out).strip()}")
+            mountpoint = drive.mountpoint
+
+            def fn():
+                rc, out, err = run_cmd(["xdg-open", mountpoint])
+                if rc == 0:
+                    return f"Opened {mountpoint}"
+                return f"Open failed: {(err or out).strip()}"
+            self.run_async(fn, "Opening folder…")
 
         # -- password management ------------------------------------------
         def dlg_set_password(self):

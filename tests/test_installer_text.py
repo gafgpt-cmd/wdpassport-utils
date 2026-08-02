@@ -147,10 +147,13 @@ class InstallerTests(unittest.TestCase):
         self.assertTrue(artifacts["venv_preserved"])
 
     def test_desktop_launcher_escapes_unusual_bin_path(self):
-        result, _, launcher, _ = self.run_installer("apt", bin_name="bin & tools")
+        result, _, launcher, artifacts = self.run_installer(
+            "apt", bin_name='bin & "tools" \\ local'
+        )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn('Exec="', launcher)
-        self.assertIn("bin & tools/wdpassport-gui", launcher)
+        self.assertIn(r'bin & \"tools\" \\ local/wdpassport-gui', launcher)
+        self.assertIn(r'bin & \"tools\" \\ local/wd-tray', artifacts["autostart"])
         self.assertNotIn("@BINDIR@", launcher)
 
     def test_dnf_install_preserves_gui_and_system_dependencies(self):

@@ -87,22 +87,31 @@ def _run(fileobj, cdb: bytes, direction: int, dxferp, dxfer_len: int,
     # non-CHECK-CONDITION status is a real failure.
     sense_data = sense.raw[:hdr.sb_len_wr]
     response_code = sense_data[0] & 0x7F if sense_data else 0
+    sense_valid = False
     if response_code in (0x72, 0x73) and len(sense_data) > 1:
         sk = sense_data[1] & 0x0F
+        sense_valid = True
     elif response_code in (0x70, 0x71) and len(sense_data) > 2:
         sk = sense_data[2] & 0x0F
+        sense_valid = True
     else:
         sk = 0
     check_condition = hdr.status == CHECK_CONDITION
     driver_result = hdr.driver_status & DRIVER_STATUS_MASK
+    sense_required = check_condition or driver_result == DRIVER_SENSE
     fatal = (
         hdr.host_status != 0
         or driver_result not in (DRIVER_OK, DRIVER_SENSE)
-        or ((check_condition or driver_result == DRIVER_SENSE) and sk not in (0x00, 0x01))
+        or (sense_required and not sense_valid)
+        or (sense_required and sk not in (0x00, 0x01))
         or (not check_condition and hdr.status != GOOD)
     )
     if fatal:
-        meaning = _SENSE_KEY_MEANING.get(sk, f"sense key {sk:#x}")
+        meaning = (
+            _SENSE_KEY_MEANING.get(sk, f"sense key {sk:#x}")
+            if sense_valid or not sense_required
+            else "invalid or missing sense data"
+        )
         raise SgioError(
             f"{meaning} (status={hdr.status:#x}, "
             f"host_status={hdr.host_status:#x}, driver_status={hdr.driver_status:#x}, "

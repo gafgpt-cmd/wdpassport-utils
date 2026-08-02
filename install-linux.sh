@@ -157,11 +157,29 @@ ln -sfn "$VENV_DIR/bin/wd-tray" "$BIN_DIR/wd-tray"
 
 mkdir -p "$APPLICATIONS_DIR" "$AUTOSTART_DIR" "$ICON_DIR"
 rm -f "$APPLICATIONS_DIR/wdpassport-gui.desktop"
-SED_BIN_DIR=${BIN_DIR//\\/\\\\}
-SED_BIN_DIR=${SED_BIN_DIR//&/\\&}
-SED_BIN_DIR=${SED_BIN_DIR//|/\\|}
-sed "s|@BINDIR@|$SED_BIN_DIR|g" "$SCRIPT_DIR/wdpassport-gui.desktop.in" > "$APPLICATIONS_DIR/dev.wdpassport.utility.desktop"
-sed "s|@BINDIR@|$SED_BIN_DIR|g" "$SCRIPT_DIR/wd-tray.desktop.in" > "$APPLICATIONS_DIR/wd-tray.desktop"
+DESKTOP_BIN_DIR=${BIN_DIR//\\/\\\\}
+DESKTOP_BIN_DIR=${DESKTOP_BIN_DIR//\"/\\\"}
+DESKTOP_BIN_DIR=${DESKTOP_BIN_DIR//\`/\\\`}
+DESKTOP_BIN_DIR=${DESKTOP_BIN_DIR//\$/\\\$}
+
+render_desktop() {
+  local template=$1
+  local output=$2
+  local executable=$3
+  local line
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    if [[ "$line" == Exec=* ]]; then
+      printf 'Exec="%s/%s"\n' "$DESKTOP_BIN_DIR" "$executable"
+    else
+      printf '%s\n' "$line"
+    fi
+  done < "$template" > "$output"
+}
+
+render_desktop "$SCRIPT_DIR/wdpassport-gui.desktop.in" \
+  "$APPLICATIONS_DIR/dev.wdpassport.utility.desktop" wdpassport-gui
+render_desktop "$SCRIPT_DIR/wd-tray.desktop.in" \
+  "$APPLICATIONS_DIR/wd-tray.desktop" wd-tray
 cp "$APPLICATIONS_DIR/wd-tray.desktop" "$AUTOSTART_DIR/wd-tray.desktop"
 cp "$SCRIPT_DIR/packaging/icons/wdpassport.svg" "$ICON_DIR/wdpassport.svg"
 cp "$SCRIPT_DIR/packaging/icons/wdpassport-locked.svg" "$ICON_DIR/wdpassport-locked.svg"

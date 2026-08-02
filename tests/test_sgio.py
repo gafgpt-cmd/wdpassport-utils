@@ -27,6 +27,20 @@ class SgioTests(unittest.TestCase):
             with self.assertRaises(sgio.SgioError):
                 sgio.write(0, b"\0", b"x")
 
+    def test_check_condition_without_sense_is_rejected(self):
+        with mock.patch.object(sgio.fcntl, "ioctl", self._ioctl(status=2)):
+            with self.assertRaisesRegex(sgio.SgioError, "missing sense"):
+                sgio.read(0, b"\0", 1)
+
+    def test_driver_sense_with_malformed_sense_is_rejected(self):
+        with mock.patch.object(
+            sgio.fcntl,
+            "ioctl",
+            self._ioctl(driver_status=sgio.DRIVER_SENSE, sense=b"\x72"),
+        ):
+            with self.assertRaisesRegex(sgio.SgioError, "invalid.*sense"):
+                sgio.write(0, b"\0", b"x")
+
     def test_short_read_returns_only_transferred_bytes(self):
         def fake(_fd, _request, hdr):
             hdr.resid = 3
