@@ -14,6 +14,7 @@ from dataclasses import dataclass
 import glob
 import os
 import subprocess
+import tempfile
 
 BYID = "/dev/disk/by-id"
 ALIAS_FILE = os.path.expanduser(
@@ -79,7 +80,7 @@ class Drive:
 def _read_aliases() -> dict:
     aliases = {}
     try:
-        with open(ALIAS_FILE, encoding="utf-8") as fh:
+        with open(ALIAS_FILE, encoding="utf-8", errors="replace") as fh:
             for line in fh:
                 line = line.strip()
                 if not line or line.startswith("#"):
@@ -96,10 +97,11 @@ def _read_aliases() -> dict:
 
 def set_alias(serial: str, name: str) -> None:
     """Add/replace a friendly name for a serial in the alias file."""
-    os.makedirs(os.path.dirname(ALIAS_FILE), exist_ok=True)
+    directory = os.path.dirname(ALIAS_FILE) or "."
+    os.makedirs(directory, exist_ok=True)
     lines, replaced = [], False
     if os.path.exists(ALIAS_FILE):
-        with open(ALIAS_FILE, encoding="utf-8") as fh:
+        with open(ALIAS_FILE, encoding="utf-8", errors="replace") as fh:
             for line in fh:
                 s = line.strip()
                 existing = s.rsplit(None, 1)[-1] if s and not s.startswith("#") else ""
@@ -110,8 +112,19 @@ def set_alias(serial: str, name: str) -> None:
                     lines.append(line)
     if not replaced:
         lines.append(f"{name} {serial}\n")
-    with open(ALIAS_FILE, "w", encoding="utf-8") as fh:
-        fh.writelines(lines)
+    fd, temporary = tempfile.mkstemp(prefix=".wd-drives.", dir=directory, text=True)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.writelines(lines)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(temporary, ALIAS_FILE)
+    except Exception:
+        try:
+            os.unlink(temporary)
+        except OSError:
+            pass
+        raise
 
 
 def _serial_of(link_name: str) -> str:

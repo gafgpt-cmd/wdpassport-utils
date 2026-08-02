@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=WD Passport Tray
+Comment=Unlock, mount, and lock WD My Passport drives from the system tray
+Exec="@BINDIR@/wd-tray"
+Icon=wdpassport
+Terminal=false
+Categories=System;
+X-GNOME-Autostart-enabled=true

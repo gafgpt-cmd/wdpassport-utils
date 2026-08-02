@@ -1,4 +1,8 @@
+import os
+from pathlib import Path
+import tempfile
 import unittest
+from unittest import mock
 
 from wdpassport.devices import find_passport_devices, is_passport_device
 
@@ -49,6 +53,25 @@ class DeviceDiscoveryTests(unittest.TestCase):
         matches = find_passport_devices(FakeContext([first, second]), "/dev/sdc")
 
         self.assertEqual(matches, [second])
+
+    def test_invalid_utf8_alias_file_does_not_break_discovery(self):
+        from wdpassport import devices
+        with tempfile.TemporaryDirectory() as tmp:
+            alias_file = Path(tmp) / "aliases"
+            alias_file.write_bytes(b"name \xffserial\n")
+            with mock.patch.object(devices, "ALIAS_FILE", str(alias_file)):
+                self.assertIsInstance(devices._read_aliases(), dict)
+
+    def test_relative_alias_path_can_be_written(self):
+        from wdpassport import devices
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(devices, "ALIAS_FILE", "aliases"):
+            old = os.getcwd()
+            os.chdir(tmp)
+            try:
+                devices.set_alias("serial", "Backup")
+                self.assertEqual(Path("aliases").read_text(), "Backup serial\n")
+            finally:
+                os.chdir(old)
 
 
 if __name__ == "__main__":

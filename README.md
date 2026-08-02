@@ -33,25 +33,35 @@ window, drive identification, and the dependency-free pure-Python SCSI transport
 (`sgio.py`, replacing the compiled `py_sg` extension) in this version were
 developed with [Claude Code](https://claude.com/claude-code) (Anthropic).
 
-## Installing on MX Linux or Debian
+## Installing on Linux
 
-This project installs into a user-owned virtual environment instead of using
-`sudo pip`. The program still needs root privileges, polkit, or equivalent
-permissions when it opens the physical drive.
+The installer supports Debian/Ubuntu (including MX Linux), Fedora/RHEL, Arch
+Linux, and openSUSE. It installs the application into a user-owned virtual
+environment with [uv](https://docs.astral.sh/uv/); only GTK and other system
+prerequisites are installed with elevated privileges. The program still needs
+root privileges, polkit, or equivalent permissions when it opens the physical
+drive.
 
 From this repository, run:
 
 ```bash
-./install-mx-debian.sh
+./install-linux.sh
 ```
 
-The installer:
+The installer automatically detects `apt`, `dnf`, `pacman`, or `zypper`, then:
 
-* installs Debian package prerequisites with `apt-get`;
-* creates or updates `$HOME/.local/share/wdpassport-utils-venv`;
-* installs this checkout and its Python dependencies into that venv;
-* links `$HOME/.local/bin/wdpassport` and `$HOME/.local/bin/wdpassport-gui`;
-* installs a desktop launcher under `$HOME/.local/share/applications`.
+* installs Python, PyGObject, GTK4, libadwaita, PolicyKit, udisks2, util-linux,
+  notifications, SMART tools, compiler, and libudev/systemd development
+  prerequisites using the native package manager;
+* installs `uv` into `$HOME/.local/bin` when it is not already available;
+* creates or updates `$HOME/.local/share/wdpassport-utils-venv` with access to
+  the distro-provided GTK bindings;
+* installs this checkout and its Python dependencies into that environment
+  through `uv`;
+* links `$HOME/.local/bin/wdpassport`, `$HOME/.local/bin/wdpassport-gui`, and
+  `$HOME/.local/bin/wd-tray`;
+* installs the application icon and desktop launcher;
+* installs a tray autostart entry under `$HOME/.config/autostart`.
 
 If `$HOME/.local/bin` is not in your `PATH`, add it in your shell profile:
 
@@ -59,15 +69,19 @@ If `$HOME/.local/bin` is not in your `PATH`, add it in your shell profile:
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
-Manual prerequisite install:
+For automation or unusual systems, set `WDPASSPORT_PACKAGE_MANAGER` explicitly
+to `apt`, `dnf`, `pacman`, or `zypper`. `WDPASSPORT_VENV_DIR` and
+`WDPASSPORT_BIN_DIR` override the virtual-environment and command directories;
+the standard `XDG_DATA_HOME` and `XDG_CONFIG_HOME` variables control desktop
+data and autostart locations. After installing the system prerequisites listed
+in `install-linux.sh`, the equivalent manual `uv` commands are:
 
 ```bash
-sudo apt-get install python3 python3-dev python3-venv python3-pip python3-gi gir1.2-gtk-4.0 gir1.2-adw-1 git build-essential libudev-dev
-python3 -m venv --system-site-packages "$HOME/.local/share/wdpassport-utils-venv"
-"$HOME/.local/share/wdpassport-utils-venv/bin/python" -m pip install --upgrade pip setuptools wheel
-"$HOME/.local/share/wdpassport-utils-venv/bin/python" -m pip install .
+uv venv --system-site-packages --python python3 "$HOME/.local/share/wdpassport-utils-venv"
+uv pip install --python "$HOME/.local/share/wdpassport-utils-venv/bin/python" --upgrade .
 ln -sfn "$HOME/.local/share/wdpassport-utils-venv/bin/wdpassport" "$HOME/.local/bin/wdpassport"
 ln -sfn "$HOME/.local/share/wdpassport-utils-venv/bin/wdpassport-gui" "$HOME/.local/bin/wdpassport-gui"
+ln -sfn "$HOME/.local/share/wdpassport-utils-venv/bin/wd-tray" "$HOME/.local/bin/wd-tray"
 ```
 
 ## CLI Usage
@@ -152,7 +166,7 @@ you will need to create a new partition table and filesystem.
 ## GUI
 
 ```bash
-sudo wdpassport-gui
+wdpassport-gui
 ```
 
 The GUI provides normal Linux controls: status, unlock, password dialogs, sleep

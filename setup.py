@@ -13,7 +13,6 @@ setup(name='wdpassport_utils',
       install_requires=[
         'pyudev',
         'typer>=0.12',
-        'py3_sg @ git+https://github.com/crypto-universe/py_sg',
       ],
       packages=['wdpassport'],
       entry_points={

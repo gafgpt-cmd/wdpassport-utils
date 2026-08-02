@@ -44,7 +44,7 @@ that contains data you need.
 7. Launch the GUI:
 
    ```bash
-   sudo wdpassport-gui
+   wdpassport-gui
    ```
 
 8. Secure erase only on a sacrificial drive:

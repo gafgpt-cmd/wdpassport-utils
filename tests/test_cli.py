@@ -1,5 +1,6 @@
 import unittest
 from unittest import mock
+from wdpassport.passwords import SecurityBlock
 
 from typer.testing import CliRunner
 
@@ -22,7 +23,13 @@ class FakeDevice:
         )
 
     def read_security_block(self):
-        return type("Block", (), {"hint": "backup"})()
+        return SecurityBlock(1000, b"ABCDEFGH", "backup")
+
+    def change_passphrase(self, cipher, old, new):
+        self.calls.append(("change_passphrase", cipher, old, new))
+
+    def write_handy_store(self, page, data):
+        self.calls.append(("write_handy_store", page, data))
 
     def set_sleep_timer(self, seconds):
         self.calls.append(("set_sleep_timer", seconds))
@@ -40,9 +47,9 @@ class CliTests(unittest.TestCase):
         self.runner = CliRunner()
         self.fake = FakeDevice()
 
-    def invoke(self, args):
+    def invoke(self, args, **kwargs):
         with mock.patch.object(cli, "open_device", return_value=self.fake):
-            return self.runner.invoke(cli.app, args)
+            return self.runner.invoke(cli.app, args, **kwargs)
 
     def test_status_prints_summary(self):
         result = self.invoke(["status", "--device", "/dev/sdb"])
@@ -76,6 +83,27 @@ class CliTests(unittest.TestCase):
             result = self.invoke(["blob", "generate", "--salt", "ABCD"])
             self.assertNotEqual(result.exit_code, 0)
             self.assertIn("--i-know-what-i-am-doing", result.output)
+
+    def test_password_set_persists_hint(self):
+        result = self.invoke(["password", "set", "--device", "/dev/sdb", "--hint", "remember", "--stdin"], input="secret\n")
+        self.assertEqual(result.exit_code, 0, result.output)
+        write = [call for call in self.fake.calls if call[0] == "write_handy_store"]
+        self.assertEqual(len(write), 1)
+        from wdpassport.passwords import decode_security_block
+        self.assertEqual(decode_security_block(write[0][2]).hint, "remember")
+
+    def test_password_set_initializes_missing_security_block(self):
+        self.fake.read_security_block = mock.Mock(side_effect=ValueError("invalid security block signature"))
+        self.fake.encryption_status = mock.Mock(return_value=EncryptionStatus(0x00, 0x30, 32, b"abcd", (0x30,)))
+        result = self.invoke(["password", "set", "--device", "/dev/sdb", "--hint", "new", "--stdin"], input="secret\n")
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertTrue(any(call[0] == "write_handy_store" for call in self.fake.calls))
+
+    def test_password_set_does_not_replace_corrupt_metadata_on_protected_drive(self):
+        self.fake.read_security_block = mock.Mock(side_effect=ValueError("invalid security block signature"))
+        result = self.invoke(["password", "set", "--device", "/dev/sdb", "--stdin"], input="secret\n")
+        self.assertNotEqual(result.exit_code, 0)
+        self.assertFalse(any(call[0] == "write_handy_store" for call in self.fake.calls))
 
 
 if __name__ == "__main__":

@@ -6,7 +6,13 @@ import typer
 
 from .actions import status_summary
 from .keepawake import run_keep_awake
-from .passwords import DEFAULT_ITERATION_COUNT, DEFAULT_SALT, make_password_blob
+from .passwords import (
+    DEFAULT_ITERATION_COUNT,
+    DEFAULT_SALT,
+    SecurityBlock,
+    build_security_block_sector,
+    make_password_blob,
+)
 from .protocol import WdPassportDevice
 from .scsi import ScsiDevice
 
@@ -198,7 +204,7 @@ def _rescan_and_mount(device: str) -> None:
                 fh.write("1\n")
     except OSError:
         pass
-    subprocess.run(["udevadm", "settle", "--timeout=5"], capture_output=True)
+    subprocess.run(["udevadm", "settle", "--timeout=5"], capture_output=True, timeout=10)
 
     part = ""
     for _ in range(15):
@@ -208,20 +214,20 @@ def _rescan_and_mount(device: str) -> None:
                 break
         if part:
             break
-        subprocess.run(["udevadm", "settle", "--timeout=2"], capture_output=True)
+        subprocess.run(["udevadm", "settle", "--timeout=2"], capture_output=True, timeout=5)
         time.sleep(1)
     if not part:
         typer.echo("Unlocked, but no partition appeared to mount.", err=True)
         return
     proc = subprocess.run(["udisksctl", "mount", "-b", part],
-                          capture_output=True, text=True)
+                          capture_output=True, text=True, timeout=30)
     out = (proc.stdout or proc.stderr or "").strip()
     if proc.returncode == 0 or "AlreadyMounted" in out:
         # Report the mount point (query it if udisks said "already mounted").
         mp = ""
         try:
             r = subprocess.run(["findmnt", "-nro", "TARGET", "--source", part],
-                               capture_output=True, text=True)
+                               capture_output=True, text=True, timeout=5)
             mp = r.stdout.strip().splitlines()[0] if r.stdout.strip() else ""
         except Exception:
             pass
@@ -255,16 +261,30 @@ def password_set(
             raise typer.BadParameter("Password confirmation did not match.")
     drive = open_device(device)
     status_value = drive.encryption_status()
-    block = drive.read_security_block()
+    initialized_block = False
+    try:
+        block = drive.read_security_block()
+    except ValueError:
+        if status_value.security_status not in (0x00, 0x07):
+            raise
+        import os
+        block = SecurityBlock(DEFAULT_ITERATION_COUNT, os.urandom(8), "")
+        initialized_block = True
+    metadata = build_security_block_sector(block.iteration_count, block.salt, hint)
+    if initialized_block:
+        # The salt must be durable before a password derived from it is set.
+        drive.write_handy_store(1, metadata)
     blob = make_password_blob(password, status_value.current_cipher, block.salt, block.iteration_count)
     drive.change_passphrase(status_value.current_cipher, None, blob)
+    if not initialized_block:
+        drive.write_handy_store(1, metadata)
     typer.echo("Password set.")
 
 
 @password_app.command("change")
 def password_change(
     device: str = _device_option(),
-    hint: str = typer.Option("", "--hint"),
+    hint: Optional[str] = typer.Option(None, "--hint"),
     stdin: bool = typer.Option(False, "--stdin", help="Read current then new password from stdin (GUI/pkexec)."),
 ):
     """Change the current password."""
@@ -284,6 +304,9 @@ def password_change(
     old_blob = make_password_blob(current, status_value.current_cipher, block.salt, block.iteration_count)
     new_blob = make_password_blob(new, status_value.current_cipher, block.salt, block.iteration_count)
     drive.change_passphrase(status_value.current_cipher, old_blob, new_blob)
+    if hint is not None:
+        drive.write_handy_store(
+            1, build_security_block_sector(block.iteration_count, block.salt, hint))
     typer.echo("Password changed.")
 
 
@@ -324,7 +347,11 @@ def erase(
             raise typer.Abort()
     drive = open_device(device)
     status_value = drive.encryption_status()
-    drive.reset_data_encryption_key(cipher or status_value.current_cipher, status_value.key_reset_enabler)
+    drive.reset_data_encryption_key(
+        cipher or status_value.current_cipher,
+        status_value.key_reset_enabler,
+        status_value.password_length,
+    )
     typer.echo("Device erased.")
 
 
@@ -440,7 +467,7 @@ def health(
     for dtype in ("sat", "scsi", "auto"):
         proc = subprocess.run(
             ["smartctl", "-H", "-A", "-i", "-d", dtype, device],
-            capture_output=True, text=True)
+            capture_output=True, text=True, timeout=30)
         out = proc.stdout
         if "smart support is:" in out.lower() or "overall-health" in out.lower():
             break

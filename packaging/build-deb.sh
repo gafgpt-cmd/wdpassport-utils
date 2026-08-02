@@ -45,13 +45,13 @@ mkwrap wdpassport     wdpassport.cli
 mkwrap wdpassport-gui wdpassport.gui
 mkwrap wd-tray        wdpassport.tray
 
-# --- 3. privileged helper (single pkexec target for ALL root subcommands) ---
+# --- 3. privileged helper (allowlisted device-management commands only) -----
 cat > "$STAGE/usr/lib/wdpassport/wd-priv" <<'EOF'
 #!/bin/sh
-# Runs the wdpassport CLI as root via pkexec. Any subcommand + args are passed
-# through; stdin is preserved (used by unlock/password --stdin). Callers invoke:
+# Runs a narrow PolicyKit boundary. Local-file commands such as blob generation
+# are rejected; stdin is preserved for password actions. Callers invoke:
 #   pkexec /usr/lib/wdpassport/wd-priv <subcommand> [args...]
-exec /usr/bin/python3 -c 'import sys; from wdpassport.cli import main; sys.exit(main())' "$@"
+exec /usr/bin/python3 -c 'import sys; from wdpassport.privileged import main; sys.exit(main())' "$@"
 EOF
 chmod 755 "$STAGE/usr/lib/wdpassport/wd-priv"
 
@@ -93,7 +93,7 @@ cp "$STAGE/usr/share/applications/wd-tray.desktop" \
    "$STAGE/etc/xdg/autostart/wd-tray.desktop"
 echo 'X-GNOME-Autostart-enabled=true' >> "$STAGE/etc/xdg/autostart/wd-tray.desktop"
 
-cat > "$STAGE/usr/share/applications/wdpassport-gui.desktop" <<'EOF'
+cat > "$STAGE/usr/share/applications/dev.wdpassport.utility.desktop" <<'EOF'
 [Desktop Entry]
 Type=Application
 Name=WD Passport Utility
