@@ -201,6 +201,29 @@ cp "$APPLICATIONS_DIR/wd-tray.desktop" "$AUTOSTART_DIR/wd-tray.desktop"
 cp "$SCRIPT_DIR/packaging/icons/wdpassport.svg" "$ICON_DIR/wdpassport.svg"
 cp "$SCRIPT_DIR/packaging/icons/wdpassport-locked.svg" "$ICON_DIR/wdpassport-locked.svg"
 cp "$SCRIPT_DIR/packaging/icons/wdpassport-off.svg" "$ICON_DIR/wdpassport-off.svg"
+
+# A theme directory without an index.theme is not a valid icon theme, and icon
+# loaders skip the whole tree -- the tray then shows a broken-image placeholder
+# even though the SVGs are present. The system hicolor theme has one, but a
+# per-user ~/.local/share/icons/hicolor usually does not.
+THEME_ROOT="${ICON_DIR%/scalable/apps}"
+if [ ! -f "$THEME_ROOT/index.theme" ]; then
+  cat > "$THEME_ROOT/index.theme" <<'THEME'
+[Icon Theme]
+Name=Hicolor
+Comment=Fallback icon theme
+Hidden=true
+Directories=scalable/apps
+
+[scalable/apps]
+Size=48
+MinSize=8
+MaxSize=512
+Type=Scalable
+Context=Applications
+THEME
+fi
+
 if command -v update-desktop-database >/dev/null 2>&1; then
   update-desktop-database "$APPLICATIONS_DIR" || true
 fi
