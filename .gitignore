@@ -3,3 +3,4 @@
 /wdpassport_utils.egg-info/
 .tokensave
 __pycache__/
+.venv/
