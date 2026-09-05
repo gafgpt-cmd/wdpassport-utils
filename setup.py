@@ -13,6 +13,10 @@ setup(name='wdpassport_utils',
       install_requires=[
         'pyudev',
         'typer>=0.12',
+        # main() catches click.Abort/ClickException directly. Typer used to
+        # pull click in transitively, but stopped doing so (>=0.27), which
+        # made the CLI crash on ModuleNotFoundError. Declare it explicitly.
+        'click',
       ],
       packages=['wdpassport'],
       entry_points={
