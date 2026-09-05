@@ -14,6 +14,14 @@ from .passwords import (
     make_password_blob,
 )
 from .protocol import WdPassportDevice
+from .repair import describe as describe_repair
+from .repair import (
+    detect_fstype,
+    install_dependencies,
+    looks_dirty,
+    missing_packages,
+    repair_partition,
+)
 from .scsi import ScsiDevice
 
 app = typer.Typer(no_args_is_help=True)
@@ -172,6 +180,10 @@ def unlock(
     mount: bool = typer.Option(
         False, "--mount", "-m",
         help="After unlocking, rescan the device and mount the drive."),
+    fix: bool = typer.Option(
+        False, "--fix",
+        help="If the mount fails because the drive was not ejected cleanly, "
+             "repair the filesystem and retry."),
 ):
     """Unlock the drive using a prompted password."""
     device = _resolve_device(device)
@@ -186,10 +198,10 @@ def unlock(
     open_device(device).unlock(password)
     typer.echo("Device unlocked.")
     if mount:
-        _rescan_and_mount(device)
+        _rescan_and_mount(device, fix=fix)
 
 
-def _rescan_and_mount(device: str) -> None:
+def _rescan_and_mount(device: str, fix: bool = False) -> None:
     """Force the kernel to re-read the just-unlocked device so its real
     partition appears, then mount it via udisksctl."""
     import os
@@ -219,9 +231,37 @@ def _rescan_and_mount(device: str) -> None:
     if not part:
         typer.echo("Unlocked, but no partition appeared to mount.", err=True)
         return
+    _mount_partition(part, fix=fix)
+
+
+def _mount_partition(part: str, fix: bool = False) -> None:
+    """Mount a partition, optionally repairing a dirty filesystem first."""
+    import subprocess
+
     proc = subprocess.run(["udisksctl", "mount", "-b", part],
                           capture_output=True, text=True, timeout=30)
     out = (proc.stdout or proc.stderr or "").strip()
+
+    # A drive pulled without unmounting comes back flagged dirty: the mount
+    # either fails or silently degrades to read-only. Repair and retry.
+    if proc.returncode != 0 and "AlreadyMounted" not in out and looks_dirty(out):
+        if not fix:
+            typer.echo(out, err=True)
+            typer.echo(
+                "\nThis looks like the drive was removed without being ejected.\n"
+                "Repair it with:  wdpassport repair --device %s" % part,
+                err=True,
+            )
+            return
+        typer.echo("Filesystem is dirty; repairing before mounting...")
+        ok, message = repair_partition(part)
+        typer.echo(message)
+        if not ok:
+            raise typer.Exit(code=1)
+        proc = subprocess.run(["udisksctl", "mount", "-b", part],
+                              capture_output=True, text=True, timeout=30)
+        out = (proc.stdout or proc.stderr or "").strip()
+
     if proc.returncode == 0 or "AlreadyMounted" in out:
         # Report the mount point (query it if udisks said "already mounted").
         mp = ""
@@ -234,6 +274,99 @@ def _rescan_and_mount(device: str) -> None:
         typer.echo("Mounted at %s." % mp if mp else (out or "Mounted."))
     else:
         typer.echo(out or ("Partition ready at %s." % part), err=True)
+
+
+def _first_partition(device: str) -> str:
+    """Return the first partition node of a device, or "" if none exists."""
+    import os
+
+    for cand in ("%s1" % device, "%sp1" % device):
+        if os.path.exists(cand):
+            return cand
+    return ""
+
+
+@app.command("install-deps")
+def install_deps(
+    check: bool = typer.Option(
+        False, "--check",
+        help="Only report what is missing; install nothing."),
+):
+    """Install the filesystem tools the repair command needs.
+
+    Repairing NTFS, exFAT, FAT and ext filesystems needs distro packages that
+    are easy to miss (on Arch, for instance, ntfsfix lives in ntfsprogs rather
+    than ntfs-3g). This installs whichever are absent.
+    """
+    missing = missing_packages()
+    if not missing:
+        typer.echo("All filesystem repair tools are already installed.")
+        return
+    typer.echo("Missing packages: %s" % " ".join(missing))
+    if check:
+        raise typer.Exit(code=1)
+    ok, message = install_dependencies(missing)
+    typer.echo(message, err=not ok)
+    if not ok:
+        raise typer.Exit(code=1)
+
+
+@app.command()
+def repair(
+    device: str = _device_option(),
+    partition: str = typer.Option(
+        "", "--partition", "-p",
+        help="Repair this partition instead of the drive's first partition."),
+    unmount: bool = typer.Option(
+        False, "--unmount", "-u",
+        help="Unmount the partition first if it is currently mounted."),
+    mount: bool = typer.Option(
+        False, "--mount", "-m",
+        help="Mount the drive again once the repair succeeds."),
+    install_missing: bool = typer.Option(
+        True, "--install-missing/--no-install-missing",
+        help="Install the required filesystem tool automatically if absent."),
+):
+    """Repair a filesystem left dirty by an unclean disconnect.
+
+    Pulling the drive without ejecting leaves the filesystem flagged dirty, so
+    the kernel refuses a read-write mount. This clears that flag.
+    """
+    import subprocess
+
+    if partition:
+        part = partition
+    else:
+        device = _resolve_device(device)
+        part = _first_partition(device)
+        if not part:
+            typer.echo("No partition found on %s. If the drive is locked, "
+                       "unlock it first." % device, err=True)
+            raise typer.Exit(code=1)
+
+    fstype = detect_fstype(part)
+    if fstype:
+        action = describe_repair(fstype) or "check the filesystem"
+        typer.echo("%s: %s -- will %s." % (part, fstype, action))
+
+    # Pull in the distro package for this filesystem before trying, so the user
+    # never has to know that e.g. ntfsfix comes from ntfsprogs.
+    if install_missing and missing_packages():
+        typer.echo("Installing missing filesystem tools...")
+        installed, install_message = install_dependencies()
+        typer.echo(install_message, err=not installed)
+
+    if unmount:
+        subprocess.run(["udisksctl", "unmount", "-b", part],
+                       capture_output=True, text=True, timeout=30)
+
+    ok, message = repair_partition(part)
+    typer.echo(message, err=not ok)
+    if not ok:
+        raise typer.Exit(code=1)
+
+    if mount:
+        _mount_partition(part)
 
 
 def _read_stdin_lines(n: int) -> list:
