@@ -46,6 +46,10 @@ install_system_dependencies() {
         udisks2 \
         util-linux \
         libnotify-bin \
+        ntfs-3g \
+        exfatprogs \
+        dosfstools \
+        e2fsprogs \
         smartmontools \
         curl
       ;;
@@ -67,6 +71,10 @@ install_system_dependencies() {
         udisks2 \
         util-linux \
         libnotify \
+        ntfs-3g \
+        exfatprogs \
+        dosfstools \
+        e2fsprogs \
         smartmontools \
         curl
       ;;
@@ -85,6 +93,11 @@ install_system_dependencies() {
         udisks2 \
         util-linux \
         libnotify \
+        ntfs-3g \
+        ntfsprogs \
+        exfatprogs \
+        dosfstools \
+        e2fsprogs \
         smartmontools \
         curl
       ;;
@@ -107,6 +120,10 @@ install_system_dependencies() {
         udisks2 \
         util-linux \
         libnotify-tools \
+        ntfs-3g \
+        exfatprogs \
+        dosfstools \
+        e2fsprogs \
         smartmontools \
         curl
       ;;
