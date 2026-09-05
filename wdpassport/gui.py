@@ -69,11 +69,23 @@ def main(argv=None) -> int:
 
     from .devices import list_drives, set_alias, virtual_cd_nodes
 
+    from . import omarchy
+
+    # Stock palette for non-Omarchy desktops; Omarchy supplies its own below.
     CSS = """
     .locked   { color: #e01b24; font-weight: bold; }
     .unlocked { color: #2ec27e; font-weight: bold; }
     .drive-badge { padding: 4px 10px; border-radius: 6px; }
     """
+
+    def active_css() -> str:
+        """Theme CSS: Omarchy's palette when available, else the stock one."""
+        if omarchy.is_omarchy():
+            try:
+                return omarchy.gtk_css()
+            except Exception:
+                pass
+        return CSS
 
     def priv_error(rc, out, err):
         """Return a friendly message for a failed pkexec run, or None on success."""
@@ -92,7 +104,10 @@ def main(argv=None) -> int:
             super().__init__(application=app, title="WD Passport Utility")
             self.set_default_size(780, 620)
             self.drives = []
+            self._css_provider = None
+            self._theme_monitor = None
             self._install_css()
+            self._follow_omarchy_theme()
 
             root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
             for setter in ("set_margin_top", "set_margin_bottom",
@@ -188,18 +203,36 @@ def main(argv=None) -> int:
             # by version, so pick the right call and never let it block the
             # window from showing.
             try:
-                provider = Gtk.CssProvider()
-                if hasattr(provider, "load_from_string"):
-                    provider.load_from_string(CSS)              # GTK 4.12+
-                else:
-                    provider.load_from_data(CSS.encode("utf-8"))  # older: bytes, 1 arg
                 display = Gdk.Display.get_default()
-                if display is not None:
-                    Gtk.StyleContext.add_provider_for_display(
-                        display, provider,
-                        Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+                if display is None:
+                    return
+                if getattr(self, "_css_provider", None) is not None:
+                    # Drop the previous stylesheet so a theme switch does not
+                    # stack providers of equal priority.
+                    Gtk.StyleContext.remove_provider_for_display(
+                        display, self._css_provider)
+                provider = Gtk.CssProvider()
+                css = active_css()
+                if hasattr(provider, "load_from_string"):
+                    provider.load_from_string(css)              # GTK 4.12+
+                else:
+                    provider.load_from_data(css.encode("utf-8"))  # older: bytes, 1 arg
+                Gtk.StyleContext.add_provider_for_display(
+                    display, provider,
+                    Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+                self._css_provider = provider
             except Exception:
                 pass
+
+        def _follow_omarchy_theme(self):
+            """Restyle live when the user runs `omarchy theme set ...`."""
+            if not omarchy.is_omarchy():
+                return
+            try:
+                self._theme_monitor = omarchy.watch_theme(
+                    lambda: GLib.idle_add(self._install_css))
+            except Exception:
+                self._theme_monitor = None
 
         def set_message(self, message):
             self.status.set_label(message)
