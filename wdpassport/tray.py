@@ -27,7 +27,7 @@ import threading
 import time
 
 from .devices import list_drives, set_alias, virtual_cd_nodes
-from .launchers import privileged_command
+from .launchers import gui_command, privileged_command
 from .repair import install_dependencies, looks_dirty, missing_packages
 
 REFRESH_SECONDS = 5
@@ -510,7 +510,7 @@ def main(argv=None) -> int:
 
         def on_open_control_panel(self):
             try:
-                subprocess.Popen(["wdpassport-gui"])
+                subprocess.Popen(gui_command())
             except Exception as exc:
                 notify("Cannot open control panel", str(exc), "dialog-error")
 
