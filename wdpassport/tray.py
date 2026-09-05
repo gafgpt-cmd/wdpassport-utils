@@ -1,4 +1,12 @@
-"""System-tray applet for WD My Passport drives (Xfce/GTK3 + AppIndicator).
+"""System-tray applet for WD My Passport drives (GTK3 + AppIndicator).
+
+Works on any shell that implements StatusNotifierItem -- Xfce, KDE, GNOME with
+the AppIndicator extension, and Wayland compositors such as Hyprland/Omarchy
+(verified there). On Omarchy the applet's own dialogs follow the active theme;
+see :mod:`wdpassport.omarchy`. The menu itself is exported over DBusMenu and
+drawn by the shell, so its appearance is the shell's to decide, not ours.
+
+Only one applet may run per session; see :mod:`wdpassport.singleton`.
 
 Goal: make it obvious WHICH drive to unlock. Drives are discovered through the
 frozen :func:`wdpassport.devices.list_drives` (rich identification: friendly
@@ -20,6 +28,7 @@ import time
 
 from .devices import list_drives, set_alias, virtual_cd_nodes
 from .launchers import privileged_command
+from .repair import install_dependencies, looks_dirty, missing_packages
 
 REFRESH_SECONDS = 5
 
@@ -165,6 +174,26 @@ def do_unmount(partition: str) -> tuple:
     return proc.returncode == 0, (proc.stderr or proc.stdout or "").strip()
 
 
+def do_repair(partition: str) -> tuple:
+    """Clear a dirty filesystem flag left by an unclean disconnect.
+
+    Runs through pkexec because the repair tools write to the raw partition.
+    The partition is unmounted first: repairing a mounted filesystem corrupts
+    it, and udisks may have already mounted it read-only.
+    """
+    if not partition:
+        return False, "no partition"
+    do_unmount(partition)
+    try:
+        proc = subprocess.run(priv("repair", "--partition", partition),
+                              capture_output=True, text=True, timeout=900)
+    except Exception as exc:
+        return False, str(exc)
+    if proc.returncode == 0:
+        return True, (proc.stdout or "Filesystem repaired.").strip()
+    return False, _pkexec_message(proc.returncode, proc)
+
+
 def do_poweroff(node: str, serial: str = "") -> tuple:
     """WD re-locks on power loss, so power-off is the 'lock' action.
 
@@ -202,10 +231,54 @@ def main(argv=None) -> int:
         print("identify go through pkexec; run inside your desktop session.")
         return 0
 
+    # One applet per session. Autostart plus a manual launch would otherwise
+    # put two icons in the panel, both polling the same drive.
+    from .singleton import acquire, running_pid
+    lock = acquire("wd-tray")
+    if lock is None:
+        pid = running_pid("wd-tray")
+        where = " (pid %d)" % pid if pid else ""
+        print("wd-tray is already running%s; not starting another." % where)
+        return 0
+    globals()["_instance_lock"] = lock
+
     import gi
     gi.require_version("Gtk", "3.0")
+    # Gdk must be pinned too: without this PyGObject can resolve it to 4.0
+    # (the version gui.py uses) and the applet dies on import with
+    # "Requiring namespace 'Gdk' version '3.0', but '4.0' is already loaded".
+    gi.require_version("Gdk", "3.0")
     gi.require_version("AyatanaAppIndicator3", "0.1")
-    from gi.repository import Gtk, GLib, AyatanaAppIndicator3 as AppIndicator
+    from gi.repository import Gdk, Gtk, GLib, AyatanaAppIndicator3 as AppIndicator
+
+    from . import omarchy
+
+    _css_provider = [None]
+
+    def install_theme_css():
+        """Paint the tray's dialogs in the active Omarchy theme.
+
+        The tray icon itself is drawn by the shell, but every dialog this
+        applet opens is ours, so they should match the desktop rather than
+        stand out in stock Adwaita. No-op off Omarchy; purely cosmetic, so
+        failure here must never take the applet down.
+        """
+        if not omarchy.is_omarchy():
+            return
+        try:
+            screen = Gdk.Screen.get_default()
+            if screen is None:
+                return
+            if _css_provider[0] is not None:
+                Gtk.StyleContext.remove_provider_for_screen(
+                    screen, _css_provider[0])
+            provider = Gtk.CssProvider()
+            provider.load_from_data(omarchy.gtk_css().encode("utf-8"))
+            Gtk.StyleContext.add_provider_for_screen(
+                screen, provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+            _css_provider[0] = provider
+        except Exception:
+            pass
 
     class Tray:
         def __init__(self):
@@ -219,6 +292,10 @@ def main(argv=None) -> int:
             self.menu = Gtk.Menu()
             self.ind.set_menu(self.menu)
             self._rebuilding = False
+            install_theme_css()
+            # Restyle live when the user runs `omarchy theme set ...`.
+            self._theme_monitor = omarchy.watch_theme(
+                lambda: GLib.idle_add(install_theme_css))
             self.rebuild()
             GLib.timeout_add_seconds(REFRESH_SECONDS, self._tick)
 
@@ -340,6 +417,7 @@ def main(argv=None) -> int:
                     add("Unmount", lambda dd=d: self.on_unmount(dd))
                 else:
                     add("Mount", lambda dd=d: self.on_mount(dd))
+                    add("Repair filesystem…", lambda dd=d: self.on_repair(dd))
                 sub.append(Gtk.SeparatorMenuItem())
                 add("Lock (power off)", lambda dd=d: self.on_lock(dd))
                 add("Identify (blink LED)", lambda dd=d: self.on_identify(dd))
@@ -473,10 +551,46 @@ def main(argv=None) -> int:
         def _mount(self, d):
             try:
                 ok, msg = do_mount(d.partition)
+                if not ok and looks_dirty(msg):
+                    # Drive was pulled without ejecting. Say so plainly and
+                    # point at the fix instead of showing a raw mount error.
+                    notify("Mount failed — drive not ejected cleanly",
+                           "%s\n\nUse “Repair filesystem…” to fix it." % msg,
+                           "dialog-warning")
+                    return
                 notify("Mounted" if ok else "Mount failed", msg,
                        "wdpassport" if ok else "dialog-error")
             except Exception as exc:
                 notify("Mount error", str(exc), "dialog-error")
+
+        def on_repair(self, d):
+            self._run_background(lambda: self._repair(d))
+
+        def _repair(self, d):
+            try:
+                # The pkexec helper deliberately refuses to install packages,
+                # so pull in any missing filesystem tool here first (this
+                # elevates on its own) rather than failing with a bare hint.
+                if missing_packages():
+                    notify("Installing filesystem tools",
+                           "Needed to repair this drive: %s"
+                           % " ".join(missing_packages()))
+                    installed, install_msg = install_dependencies()
+                    if not installed:
+                        notify("Could not install repair tools", install_msg,
+                               "dialog-error")
+                        return
+                notify("Repairing filesystem", "This can take a few minutes…")
+                ok, msg = do_repair(d.partition)
+                if not ok:
+                    notify("Repair failed", msg, "dialog-error")
+                    return
+                mounted, mount_msg = do_mount(d.partition)
+                notify("Filesystem repaired",
+                       "Mounted at %s" % mount_msg if mounted else msg,
+                       "wdpassport")
+            except Exception as exc:
+                notify("Repair error", str(exc), "dialog-error")
 
         def on_unmount(self, d):
             self._run_background(lambda: self._unmount(d))
